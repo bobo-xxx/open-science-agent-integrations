@@ -44,6 +44,6 @@
 - 使用官方 SDK 和受控本机服务测试了三套 runner。模拟提交响应丢失后可跨包找回任务，提交计数为一次。产物下载、框架写入和回读均通过。
 - WorkBuddy 5.11.3 的临时项目已放入最终技能包，用户已确认工作区信任。包内 runner 可通过 Node 连接 DEV。任务提交前的技能选择器未显示 `open-science`，宿主内加载和调用仍待验证。
 - 常规真实任务通过。当前 Codex 使用打包技能在 DEV 提交了一个专用测试会话，内部框架为 Claude Code，会话模型为 `deepseek-flash`。另一套打包 runner 从共享回执恢复 Run，续跑后通过 SDK 下载产物并核对内容。这验证了跨包恢复，Claude Code 和 WorkBuddy 的宿主内全流程仍需分别验收。
-- 外部 Claude Code 的隔离 CLI 会话确认选择 `deepseek-flash` 并发现 `open-science:open-science`。限时探测没有收到助手回复或工具结果，尚不能判定宿主内调用通过。
+- 外部 Claude Code 的隔离 CLI 会话确认选择 `deepseek-flash[1m]` 并发现 `open-science:open-science`。限时探测没有收到助手回复或工具结果。用同一连接配置直接向 DeepSeek 的 Anthropic API 请求 `deepseek-flash`，返回 HTTP 200 和预期文本。宿主内调用仍待验证。
 - 智能体切换专项通过。切到 Open Science Agent 后，一条短任务使用 `deepseek-flash` 完成，服务端用量记录与会话配置一致。首次尝试在任务准备结束前恢复框架，回执记录为准备失败。重试完成后恢复 Claude Code，确认默认模型仍为 `deepseek-flash` 且 `doctor` 返回 `ready: true`。
 - 当前两个目标都保持手动启动，DEV 的桌面启动器尚未验证可保留前台焦点。

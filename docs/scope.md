@@ -42,7 +42,7 @@
 - 0.2.0 的三套适配包已构建。24 项回归测试通过，涵盖实例绑定、并发启动、提交回执、并发切换和打包。
 - Codex 与 Claude Code 的本机临时配置测试通过。两者均验证安装、升级、技能发现、SDK 健康检查和卸载。卸载后其他包仍可读取同一条临时回执。
 - 使用官方 SDK 和受控本机服务测试了三套 runner。模拟提交响应丢失后可跨包找回任务，提交计数为一次。产物下载、框架写入和回读均通过。
-- WorkBuddy 5.11.3 已在宿主的 Installed skills 中显示「Open Science 科研工作台」。用户选用 DeepSeek Flash 从 WorkBuddy 提交了真实任务，DEV 和 Codex 共用的本地回执均可查到。首次任务在创建 Run 前失败，服务端日志显示 DEV 绑定的 `claude.cmd` 已丢失。已从现有 Claude Code 2.1.327 安装重建 npm 启动入口，`doctor` 恢复 `ready: true`。结果与产物等待使用新请求 ID 复测。
+- WorkBuddy 5.11.3 的真实任务闭环通过。宿主显示「Open Science 科研工作台」，用户选用 DeepSeek Flash 提交任务。首次提交在创建 Run 前因 DEV 绑定的 `claude.cmd` 丢失而失败。从现有 Claude Code 2.1.327 安装重建启动入口后，用户使用新的请求 ID 复测，WorkBuddy 返回完成状态和 `native-workbuddy-flash.txt`。DEV 会话有效模型为 `deepseek-flash`。Codex 从共享回执恢复同一 Run 并通过 SDK 下载产物，内容与预期一致。
 - Codex 的常规真实任务通过。当前 Codex 使用打包技能在 DEV 提交了一个专用测试会话，内部框架为 Claude Code，会话模型为 `deepseek-flash`。另一套打包 runner 从共享回执恢复 Run，续跑后通过 SDK 下载产物并核对内容。
 - 外部 Claude Code 的真实宿主任务闭环通过。将 Claude Code 专用代理配置改为 HTTP 后，Claude Code 2.1.327 使用 `deepseek-flash[1m]` 调用打包技能提交真实测试任务。一个新的 CLI 会话使用同一回执恢复到原 Run、读取完成结果、下载产物，文件内容核对通过。DEV 执行会话的有效模型为 `deepseek-flash`。[Claude Code 官方代理配置](https://code.claude.com/docs/en/network-config#proxy-configuration)
 - 智能体切换专项通过。切到 Open Science Agent 后，一条短任务使用 `deepseek-flash` 完成，服务端用量记录与会话配置一致。首次尝试在任务准备结束前恢复框架，回执记录为准备失败。重试完成后恢复 Claude Code，确认默认模型仍为 `deepseek-flash` 且 `doctor` 返回 `ready: true`。

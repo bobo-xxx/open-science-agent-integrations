@@ -1,0 +1,7 @@
+{
+  "display_name": "Open Science 科研工作台",
+  "display_name_en": "Open Science",
+  "description_zh": "通过本机 Open Science SDK 提交和跟踪科研任务，读取结果和产物。",
+  "description_en": "Submit and track research tasks and retrieve results through the local Open Science SDK.",
+  "author": "Open Science Integrations contributors"
+}

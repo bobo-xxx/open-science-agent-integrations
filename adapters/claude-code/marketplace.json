@@ -1,0 +1,12 @@
+{
+  "name": "open-science-integrations-local",
+  "owner": { "name": "Open Science Integrations contributors" },
+  "metadata": { "description": "Local integrations for the Open Science research workbench." },
+  "plugins": [
+    {
+      "name": "open-science",
+      "description": "Submit and track Open Science research tasks through its local SDK.",
+      "source": "./plugins/open-science"
+    }
+  ]
+}

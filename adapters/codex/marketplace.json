@@ -1,0 +1,13 @@
+{
+  "name": "open-science-integrations-local",
+  "interface": { "displayName": "Open Science Integrations" },
+  "plugins": [
+    {
+      "name": "open-science",
+      "source": {
+        "source": "local",
+        "path": "./plugins/open-science"
+      }
+    }
+  ]
+}

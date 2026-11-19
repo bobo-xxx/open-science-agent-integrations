@@ -1,15 +1,13 @@
 {
-  "defaultInstance": "dev",
+  "defaultInstance": "installed",
   "instances": {
-    "dev": {
-      "name": "Open Science DEV",
-      "sdkPath": "D:/path/to/open-science-dev/packages/open-science/index.mjs",
-      "configRoot": "D:/path/to/open-science-dev-profile"
-    },
     "installed": {
       "name": "Open Science",
-      "sdkPath": "C:/path/to/open-science/resources/packages/open-science/index.mjs",
-      "configRoot": "C:/path/to/open-science-profile"
+      "configRoot": "C:/path/to/open-science-profile",
+      "cli": {
+        "command": "C:/path/to/open-science/resources/node-runtime/node.exe",
+        "args": ["C:/path/to/open-science/resources/backend/cli.mjs"]
+      }
     }
   }
 }

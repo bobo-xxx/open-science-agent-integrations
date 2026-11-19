@@ -47,10 +47,12 @@ function childCall(directory, operation, ...values) {
 
 test('one process reserves the request and all hosts recover the same receipt', async t => {
   const directory = await createStore(t)
+  const fingerprint = '12'.repeat(32)
   const reservations = await Promise.all(Array.from({ length: 3 }, () =>
-    childCall(directory, 'reserveReceipt', { ...identity, sessionId: 'session-1' })))
+    childCall(directory, 'reserveReceipt', { ...identity, sessionId: 'session-1', fingerprint })))
   const values = reservations.map(result => result.value)
   assert.equal(values.filter(value => value.created).length, 1)
+  assert.equal(values[0].receipt.fingerprint, fingerprint)
   assert.deepEqual(values.map(value => value.receipt), Array(3).fill(values[0].receipt))
   const saved = await childCall(directory, 'recordRunId', identity.requestId, 'run-1')
   assert.equal(saved.value.runId, 'run-1')

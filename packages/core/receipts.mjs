@@ -4,6 +4,7 @@ import { isAbsolute, join } from 'node:path'
 
 const requestIdPattern = /^[A-Za-z0-9_-]{1,128}$/
 const requestFilePattern = /^([a-f0-9]{64})\.request\.json$/
+const fingerprintPattern = /^[a-f0-9]{64}$/
 
 function receiptError(code, message) {
   return Object.assign(new Error(message), { code })
@@ -19,8 +20,22 @@ function isIdentifier(value) {
   return typeof value === 'string' && value.length <= 1024 && value.trim().length > 0 && !value.includes('\0')
 }
 
-function hash(requestId) {
-  return createHash('sha256').update(requestId).digest('hex')
+function hash(value) {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.keys(value).sort().map(key =>
+      `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+    return `{${entries.join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+export function fingerprintRequest({ requestId, run }) {
+  return hash(canonicalJson({ requestId, run }))
 }
 
 function paths(directory, key) {
@@ -58,14 +73,18 @@ async function readReceipt(directory, key) {
   const location = paths(directory, key)
   const reservation = await readRecord(location.reservation)
   if (!reservation) return null
-  const { instanceId, binding, projectId, sessionId, requestId, createdAt } = reservation
+  const { instanceId, binding, projectId, sessionId, requestId, createdAt, fingerprint } = reservation
   if (typeof requestId !== 'string' || !requestIdPattern.test(requestId) || hash(requestId) !== key ||
       ![instanceId, binding, projectId].every(isIdentifier) ||
       (sessionId !== undefined && !isIdentifier(sessionId)) ||
-      !Number.isSafeInteger(createdAt) || createdAt < 0) throw corrupt()
+      !Number.isSafeInteger(createdAt) || createdAt < 0 ||
+      (fingerprint !== undefined && (typeof fingerprint !== 'string' || !fingerprintPattern.test(fingerprint)))) {
+    throw corrupt()
+  }
 
   const receipt = { requestId, instanceId, binding, projectId, createdAt }
   if (sessionId !== undefined) receipt.sessionId = sessionId
+  if (fingerprint !== undefined) receipt.fingerprint = fingerprint
   const savedRun = await readRecord(location.run)
   if (savedRun) {
     const { runId, runRecordedAt } = savedRun
@@ -101,11 +120,14 @@ async function publishRecord(path, record) {
   }
 }
 
-export async function reserveReceipt(directory, { requestId, instanceId, binding, projectId, sessionId }) {
+export async function reserveReceipt(directory, { requestId, instanceId, binding, projectId, sessionId, fingerprint }) {
   validateRequestId(requestId)
   if (![instanceId, binding, projectId].every(isIdentifier) ||
       (sessionId !== undefined && !isIdentifier(sessionId))) {
     throw receiptError('invalid_input', 'A task receipt needs a target instance, profile binding, and project ID.')
+  }
+  if (fingerprint !== undefined && (typeof fingerprint !== 'string' || !fingerprintPattern.test(fingerprint))) {
+    throw receiptError('invalid_input', 'A task receipt fingerprint must be a lowercase SHA-256 digest.')
   }
   const key = hash(requestId)
   const { reservation } = paths(directory, key)
@@ -113,6 +135,7 @@ export async function reserveReceipt(directory, { requestId, instanceId, binding
   const identity = { requestId, instanceId, binding, projectId }
   if (sessionId !== undefined) identity.sessionId = sessionId
   const candidate = { ...identity, createdAt: Date.now() }
+  if (fingerprint !== undefined) candidate.fingerprint = fingerprint
   if (await publishRecord(reservation, candidate)) return { created: true, receipt: candidate }
 
   const existing = await readReceipt(directory, key)

@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util'
-import { loadConfiguration } from './connection.mjs'
+import { loadConfiguration } from './config.mjs'
 import { inputError, validateRequest } from './actions.mjs'
 import { operate } from './workflow.mjs'
 
@@ -28,28 +28,31 @@ let envelope
 try {
   const { values } = parseArgs({ options: {
     config: { type: 'string' }, instance: { type: 'string' },
-    start: { type: 'boolean' }, 'no-start': { type: 'boolean' }, help: { type: 'boolean' }
+    'no-start': { type: 'boolean' }, help: { type: 'boolean' }
   } })
   if (values.help) {
-    envelope = { ok: true, usage: 'node runner.mjs [--config <absolute-path>] [--instance <id>] [--no-start] < request.json' }
+    envelope = { ok: true, usage: 'node runner.mjs [--config <absolute-path>] [--instance <id>] < request.json' }
   } else {
-    if (values.start && values['no-start']) throw inputError('Choose either --start or --no-start.')
     request = await readRequest()
     const configuration = await loadConfiguration(values.config)
     const reply = await operate(configuration, request, {
-      instanceId: values.instance, start: !values['no-start'], signal
+      instanceId: values.instance, signal
     })
     envelope = { ok: true, ...reply }
   }
 } catch (error) {
+  const requestId = request?.requestId ?? error.requestId
+  const runId = request?.runId ?? error.runId
   envelope = {
     ok: false,
+    ...(error.instanceId ? { instanceId: error.instanceId } : {}),
     error: {
       code: signal.aborted ? 'aborted' : (error.code ?? 'integration_error'),
       message: error.message,
-      ...(Number.isInteger(error.status) ? { status: error.status } : {}),
-      ...(request?.requestId ? { requestId: request.requestId } : {}),
-      ...(request?.runId ? { runId: request.runId } : {})
+      ...(Number.isInteger(error.exitCode) ? { exitCode: error.exitCode } : {}),
+      ...(error.completionStatus ? { completionStatus: error.completionStatus } : {}),
+      ...(requestId ? { requestId } : {}),
+      ...(runId ? { runId } : {})
     }
   }
   process.exitCode = 1

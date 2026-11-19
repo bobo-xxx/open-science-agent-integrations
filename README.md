@@ -16,7 +16,7 @@ Send the prompt for your host in a local session on the computer running Open Sc
 
 ### WorkBuddy
 
-> Install the Open Science skill from https://github.com/bobo-xxx/open-science-agent-integrations on this computer. Follow this README's shared setup and WorkBuddy install steps. Build the skill and copy the complete `dist/workbuddy/open-science` directory into `~/.workbuddy/skills/`. Verify the installed files and Open Science connection, then tell me how to check skill discovery in a new WorkBuddy chat.
+> Install the Open Science skill from [https://github.com/bobo-xxx/open-science-agent-integrations](https://github.com/bobo-xxx/open-science-agent-integrations) for WorkBuddy.
 
 ## Shared setup
 
@@ -67,7 +67,7 @@ In a new Claude Code session, invoke `/open-science:open-science` and ask it to 
 2. Start a new local chat and ask WorkBuddy to use `open-science` to list projects. Restart the app if it has not refreshed the skill list.
 3. If the host cannot write to the user skill directory or discover the copied skill, import `dist/workbuddy/open-science.zip` under **Skills → Add Skill → Upload Skill**. For a coding workspace, WorkBuddy also documents workspace-scoped skills under `.codebuddy/skills/`. [WorkBuddy skill import](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) · [Workspace skills](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Project)
 
-The Windows acceptance test used the ZIP import. The user-level directory is documented by SkillHub. Verify discovery after deploying a fresh copy.
+On Windows, WorkBuddy installed the skill into the user-level directory after a one-line request with the GitHub repository URL. The installed files matched the build, and the installed runner listed projects through the local SDK.
 
 ## Verify the Open Science connection
 

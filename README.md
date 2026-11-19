@@ -69,9 +69,15 @@ claude --plugin-dir (Resolve-Path 'dist/claude-code/plugins/open-science').Path
 
 ### Install in WorkBuddy
 
-1. In WorkBuddy's local mode, copy the full `dist/workbuddy/open-science` directory to `~/.workbuddy/skills/open-science`. Keep `SKILL.md`, `scripts`, and `references` together. If the directory already exists, compare its files and skip the copy when they match. [WorkBuddy skill directory](https://skillhub.cn/install/skillhub.md)
-2. Start a new local chat and ask WorkBuddy to use `open-science` to list projects. Restart the app if it has not refreshed the skill list.
-3. If the host cannot write to the user skill directory or discover the copied skill, import `dist/workbuddy/open-science.zip` under **Skills → Add Skill → Upload Skill**. For a coding workspace, WorkBuddy also documents workspace-scoped skills under `.codebuddy/skills/`. [WorkBuddy skill import](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) · [Workspace skills](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Project)
+Use your terminal and file tools in local mode to complete shared setup and install the skill.
+
+1. Deploy the contents of `dist/workbuddy/open-science` to `~/.workbuddy/skills/open-science`. Place `SKILL.md`, `scripts`, and `references` directly under the destination. If those files already match the build, reuse the existing copy. [WorkBuddy skill directory](https://skillhub.cn/install/skillhub.md)
+2. Check the deployed files. Run the installed `scripts/runner.mjs` with `--no-start` and send `{"action":"projects"}` on stdin. Report the install location and the SDK result. If the instance is offline, ask the user to start it and retry the check.
+3. To verify skill discovery, give the user this prompt to send in a new local WorkBuddy chat.
+
+   > Use the `open-science` skill to list projects in my default Open Science instance.
+
+If the new chat cannot find the skill, ask the user to restart WorkBuddy and retry. If directory installation is blocked or the skill still cannot be found after a restart, report the blocker, give the user the absolute path to the built `dist/workbuddy/open-science.zip`, and point them to **Skills → Add Skill → Upload Skill**. For workspace-scoped installation, deploy the skill under the active coding workspace's `.codebuddy/skills/` directory. [WorkBuddy skill import](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) · [Workspace skills](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Project)
 
 On Windows, WorkBuddy installed the skill into the user-level directory after a one-line request with the GitHub repository URL. The installed files matched the build, and the installed runner listed projects through the local SDK.
 

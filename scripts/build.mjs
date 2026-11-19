@@ -56,7 +56,7 @@ async function compileSkill(root, destination) {
 
   const core = join(root, 'packages', 'core')
   const runtimeFiles = (await filesUnder(core)).filter((path) => path.endsWith('.mjs'))
-  if (!runtimeFiles.includes('runner.mjs')) throw new Error('Missing shared SDK runner.mjs')
+  if (!runtimeFiles.includes('runner.mjs')) throw new Error('Missing shared Open Science CLI runner.mjs')
   await copyFiles(core, join(destination, 'scripts'), runtimeFiles)
 }
 

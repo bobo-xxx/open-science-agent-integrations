@@ -1,6 +1,6 @@
 {
   "name": "open-science",
-  "description": "Submit and track Open Science research tasks through its local SDK.",
+  "description": "Submit and track Open Science research tasks through the official CLI.",
   "skills": "./skills/",
   "interface": {
     "displayName": "Open Science",

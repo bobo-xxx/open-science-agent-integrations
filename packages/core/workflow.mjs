@@ -47,7 +47,7 @@ function checkSubmitIdentity(prior, { run }) {
 
 async function submission(client, requestId, options, stateDirectory) {
   const result = await execute(client, { action: 'submission', requestId }, options)
-  if (result.requestId !== requestId) fail('invalid_response', 'The service returned a different request ID.')
+  if (result?.requestId !== requestId) fail('invalid_response', 'The CLI did not return the requested submission.')
   if (stateDirectory && result.runId) await recordRunId(stateDirectory, requestId, result.runId)
   return result
 }
@@ -59,18 +59,10 @@ async function submit(client, request, { configuration, target, options, receipt
     try {
       return await submission(client, requestId, options, stateDirectory)
     } catch (error) {
-      if (!retryIfMissing || receipt.runId !== undefined ||
-          error?.code !== 'submission_not_found' || error.status !== 404) throw error
+      if (!retryIfMissing || receipt.runId !== undefined || error?.code !== 'submission_not_found') throw error
     }
   }
 
-  const health = await client.health(options)
-  if (!health.taskCapabilities?.includes('durable-submissions')) {
-    fail('unsupported_capability', 'The selected instance does not support durable submissions.')
-  }
-  if (run.permissionPrompts === 'none' && !health.taskCapabilities?.includes('permission-prompts-none')) {
-    fail('unsupported_capability', 'The selected instance does not support unattended runs.')
-  }
   if (receipt) {
     // Another host may have recorded a Run while this request was checking the service.
     const latest = await getReceipt(stateDirectory, requestId)
@@ -89,10 +81,35 @@ async function submit(client, request, { configuration, target, options, receipt
     if (!created) return submission(client, requestId, options, stateDirectory)
   }
 
-  const result = await client.submitRun(requestId, run, options)
-  if (result.requestId !== requestId) fail('invalid_response', 'The service returned a different request ID.')
-  if (result.runId) await recordRunId(stateDirectory, requestId, result.runId)
-  return result
+  let result
+  try {
+    result = await execute(client, request, options)
+  } catch (error) {
+    const unconfirmed = ['timeout', 'cli_timeout'].includes(error?.code) ||
+      error?.completionStatus === 'submission-unconfirmed'
+    if (options.signal?.aborted || !unconfirmed) throw error
+    try {
+      return await submission(client, requestId, options, stateDirectory)
+    } catch (lookupError) {
+      if (lookupError?.code === 'receipt_conflict') throw lookupError
+      throw error
+    }
+  }
+  if (result?.requestId !== undefined && result.requestId !== requestId) {
+    fail('invalid_response', 'The CLI returned a different request ID.')
+  }
+  if (typeof result?.id !== 'string' || !result.id.trim() ||
+      !['running', 'completed', 'failed', 'cancelled'].includes(result.status)) {
+    fail('invalid_response', 'The CLI did not return a valid Run. Query the original request ID before retrying.')
+  }
+  await recordRunId(stateDirectory, requestId, result.id)
+  return {
+    requestId,
+    runId: result.id,
+    status: 'accepted',
+    runStatus: result.status,
+    ...(typeof result.sessionId === 'string' && result.sessionId ? { sessionId: result.sessionId } : {})
+  }
 }
 
 async function switchAgent(client, request, target, options) {
@@ -110,12 +127,11 @@ async function switchAgent(client, request, target, options) {
   }
 }
 
-export async function operate(configuration, request, { instanceId, start = true, signal } = {}) {
+export async function operate(configuration, request, { instanceId, signal } = {}) {
   if (request.action === 'instances') {
     const instances = Object.entries(configuration.instances).map(([id, config]) => ({
       id,
-      name: config.name ?? id,
-      autoStart: config.launch?.preservesFocus === true
+      name: config.name ?? id
     }))
     return { result: { defaultInstance: configuration.defaultInstance, instances } }
   }
@@ -150,19 +166,24 @@ export async function operate(configuration, request, { instanceId, start = true
   const target = receipt
     ? selectReceiptTarget(configuration, receipt, instanceId)
     : selectInstance(configuration, instanceId)
-  const { client } = await connect({
-    configuration, instanceId: target.instanceId, expectedBinding: target.binding, start, signal
-  })
-  const options = { signal }
-  let result
-  if (request.action === 'submission') {
-    result = await submission(client, request.requestId, options, receipt && configuration.stateDirectory)
-  } else if (request.action === 'submit') {
-    result = await submit(client, request, { configuration, target, options, receipt })
-  } else if (request.action === 'switch-agent') {
-    result = await switchAgent(client, request, target, options)
-  } else {
-    result = await execute(client, request, options)
+  try {
+    const { client } = await connect({
+      configuration, instanceId: target.instanceId, expectedBinding: target.binding, signal
+    })
+    const options = { signal }
+    let result
+    if (request.action === 'submission') {
+      result = await submission(client, request.requestId, options, receipt && configuration.stateDirectory)
+    } else if (request.action === 'submit') {
+      result = await submit(client, request, { configuration, target, options, receipt })
+    } else if (request.action === 'switch-agent') {
+      result = await switchAgent(client, request, target, options)
+    } else {
+      result = await execute(client, request, options)
+    }
+    return { instanceId: target.instanceId, result }
+  } catch (error) {
+    if (error instanceof Error) error.instanceId = target.instanceId
+    throw error
   }
-  return { instanceId: target.instanceId, result }
 }

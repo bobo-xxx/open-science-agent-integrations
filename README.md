@@ -1,6 +1,6 @@
 # Open Science Agent Integrations
 
-Use Codex, Claude Code, or WorkBuddy to submit research tasks to Open Science, recover runs after a chat closes, and retrieve results and artifacts through the local SDK.
+Use Codex, Claude Code, or WorkBuddy to submit research tasks to Open Science, recover runs after a chat closes, and retrieve results and artifacts through the official Open Science CLI.
 
 ## Ask your agent to install
 
@@ -32,14 +32,23 @@ Resolve repository paths from the checkout and expand `~` to the current user's 
    git rev-parse HEAD
    ```
 
-3. Select the Open Science instance the user requested. Use the official desktop instance for a standard installation. If several instances match the request, ask which one to use. If the selected instance is offline, use the normal app shortcut for the official desktop so it opens with its existing profile and credentials. For an explicitly selected development instance, use that instance's launcher. Locate the selected instance's SDK and profile on the same computer.
+3. Select the Open Science instance the user requested. Use the official desktop instance for a standard installation. If several instances match, ask which one to use. If the selected instance is offline, ask the user to open it through its normal desktop entry point so it uses its existing profile and credentials.
 
-   - For an installed app, use `resources/packages/open-science/index.mjs` under the installation directory.
-   - For a development checkout, use `packages/open-science/index.mjs` under that checkout.
-   - Use the directory containing the selected service's `web-service.json` as `configRoot`. The standard Windows installation normally uses `~/.open-science`. Keep installed and development profiles separate.
+   - On Windows, set `cli.command` to the desktop installation's `resources/node-runtime/node.exe`. Put that installation's absolute `resources/backend/cli.mjs` path in `cli.args`. Resolve these paths from the matching installation and check the CLI's `--version`.
+   - Use the directory containing the selected service's `web-service.json` as `configRoot`. The standard Windows installation normally uses `~/.open-science`. Each configured profile needs its own matching CLI, even when several versions are installed.
 
-4. Check `OPEN_SCIENCE_INTEGRATIONS_CONFIG`, or `~/.open-science-agent-integrations/config.json` by default. Reuse the exact ID of an existing entry that matches the selected SDK and profile. For a new configuration, copy the example, fill in the absolute `sdkPath` and `configRoot`, and run `npm run configure -- <prepared-config.json>`. The example sets the official instance ID and default to `installed`. For an existing configuration that lacks the target, add it under an unused ID and preserve the existing default. If converting a legacy single-instance configuration, preserve its entry and default under the ID `default`. [Windows configuration example](examples/config.windows.json)
-5. Use the selected instance ID explicitly in SDK probes and new-chat prompts, even when it is already the default. The examples below use `installed`. Substitute the ID you resolved if it differs.
+4. Check `OPEN_SCIENCE_INTEGRATIONS_CONFIG`, or `~/.open-science-agent-integrations/config.json` by default. For a new configuration, fill in the Windows example and run `npm run configure -- <prepared-config.json>`. The example sets the official instance ID and default to `installed`. If upgrading from an SDK-based configuration, follow the migration instructions below before replacing an installed adapter. [Windows configuration example](examples/config.windows.json)
+5. Use the selected instance ID explicitly in probes and new-chat prompts. The examples below use `installed`. Substitute the ID you resolved if it differs.
+
+### Migrate an existing configuration
+
+Prepare a CLI configuration that lists the same instance IDs, profile roots, default selection, and receipt directory as the existing configuration. For a legacy single-instance configuration, use the ID `default`. Replace the old `sdkPath` and any automatic launcher settings with the matching official CLI entry for each instance. Have the user open each instance normally for validation.
+
+```powershell
+npm run configure -- --migrate <prepared-cli-config.json>
+```
+
+Migration verifies each CLI and running profile, saves a backup, and atomically replaces the shared configuration. If an instance has no matching CLI or service, report the instance and resolve it before migrating. Keep the backup path with the previous adapter packages for rollback. [Migration and acceptance plan](docs/cli-migration.md)
 
 ## Host install steps
 
@@ -87,7 +96,7 @@ Use your terminal and file tools in local mode to complete shared setup and inst
 
 If the new chat cannot find the skill, ask the user to restart WorkBuddy and retry. If directory installation is blocked or the skill still cannot be found after a restart, report the blocker, give the user the absolute path to the built `dist/workbuddy/open-science.zip`, and point them to **Skills → Add Skill → Upload Skill**. For workspace-scoped installation, deploy the skill under the active coding workspace's `.codebuddy/skills/` directory. [WorkBuddy skill import](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) · [Workspace skills](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Project)
 
-On Windows, WorkBuddy installed the skill into the user-level directory after a one-line request with the GitHub repository URL. The installed files matched the build, and the installed runner listed projects through the local SDK.
+On Windows, WorkBuddy installed the skill into the user-level directory after a one-line request with the GitHub repository URL.
 
 ## Verify the Open Science connection
 
@@ -95,26 +104,26 @@ Run these read-only PowerShell probes from the repository root. Confirm the conf
 
 ```powershell
 '{"action":"instances"}' | node packages/core/runner.mjs
-'{"action":"health"}' | node packages/core/runner.mjs --instance installed --no-start
-'{"action":"doctor"}' | node packages/core/runner.mjs --instance installed --no-start
+'{"action":"health"}' | node packages/core/runner.mjs --instance installed
+'{"action":"doctor"}' | node packages/core/runner.mjs --instance installed
 ```
 
-Report the built commit SHA, the returned `instanceId`, and the version reported by `health`. The `health` and `doctor` replies must have `ok: true` and match the selected ID. Check that `health.result.taskCapabilities` includes `durable-submissions` and `doctor.result.ready` is `true`. Confirm skill discovery separately when the host lists projects for the same ID in a new chat.
+Report the built commit SHA, the returned `instanceId`, and the CLI and service versions reported by `health`. The `health` and `doctor` replies must have `ok: true` and match the selected ID. Check that `doctor.result.ready` is `true`. Confirm skill discovery separately when the host lists projects for the same ID in a new chat.
 
-If verification fails, keep the selected instance and report the SDK error code or missing capability.
+If verification fails, keep the selected instance and report the CLI error code.
 
-- For a missing `web-service.json` or an offline service, start the selected instance and check its profile again. [Shared setup](#shared-setup)
-- For `sdk_load_failed` or `incompatible_sdk`, resolve `index.mjs` from that desktop installation and retry.
-- If authentication is rejected, confirm the SDK and `configRoot` belong to the same running instance and that the agent and app run under the same Windows account. The SDK reads the service credentials from the selected profile.
+- For a missing `web-service.json` or an offline service, have the user open the selected desktop instance and check its profile again. [Shared setup](#shared-setup)
+- For `incompatible_cli` or `cli_version_mismatch`, locate the CLI in the matching desktop installation and check its version.
+- If authentication is rejected, confirm that `configRoot` belongs to the intended running instance and that the agent and app run under the same Windows account.
 
 ## Update or remove an adapter
 
-To update, build the requested GitHub revision, then apply the steps for the selected host. [Shared setup](#shared-setup)
+To update, build the requested GitHub revision. Migrate an older shared configuration before replacing any host package. Keep the previous packages and configuration backup together so you can restore both if an upgrade fails. [Shared setup](#shared-setup)
 
 | Host | Update | Remove |
 | --- | --- | --- |
-| Codex | Remove the plugin, then run `codex plugin add open-science@open-science-integrations-local` again. Open a new chat. | Run `codex plugin remove open-science@open-science-integrations-local`. |
-| Claude Code | Run `claude plugin marketplace update open-science-integrations-local` and `claude plugin update open-science@open-science-integrations-local`. Start a new session. | Run `claude plugin uninstall open-science@open-science-integrations-local`. |
+| Codex | Remove the plugin. If the local build moved, remove `open-science-integrations-local` with `codex plugin marketplace remove` and register the new `dist/codex`. Add the plugin again and open a new chat. | Run `codex plugin remove open-science@open-science-integrations-local`. |
+| Claude Code | For the existing marketplace path, run `claude plugin marketplace update open-science-integrations-local` and `claude plugin update open-science@open-science-integrations-local`. If the build moved, replace the marketplace registration with the new `dist/claude-code` and install the plugin. Start a new session. | Run `claude plugin uninstall open-science@open-science-integrations-local`. |
 | WorkBuddy | Update the deployed skill files from the new build or replace the imported ZIP through the app. Open a new local chat. | Use **Installed skills** for an imported skill. For a directory deployment, remove the deployed skill directory. |
 
 Keep the shared configuration and receipts when removing one adapter.
@@ -123,8 +132,8 @@ Keep the shared configuration and receipts when removing one adapter.
 
 - Use `OPEN_SCIENCE_INTEGRATIONS_CONFIG` or `--config <path>` for a different shared configuration. Older single-instance configurations use the ID `default`.
 - The runner saves request IDs and known Run IDs in `receipts` next to the configuration on a filesystem with hard-link support, such as NTFS. Set an absolute `stateDirectory` to store them elsewhere. Keep each instance ID bound to its original profile so receipts can recover runs after the default changes. Open Science continues an accepted task after the runner exits.
-- To enable automatic startup for an instance, configure its `launch` object with an absolute `command`, an `args` array, an optional absolute `cwd`, and `preservesFocus: true`. Check that the launcher starts the intended profile and preserves the foreground window before enabling it. A configured launcher has a 60-second connection budget.
+- Continue existing sessions by Session ID or task receipt. If you have only a title, locate the session in Open Science.
 - To switch the internal Open Science agent, ask the host to read `agent-routing` and apply `switch-agent` to the selected instance. The new setting governs later tasks there. Check `doctor` before starting a test task.
 - When a pending approval or question needs human action, use the session ID from the runner to find it in Open Science.
 
-See the runner reference for request examples and recovery. Run `npm test` for regression checks. The Open Science repository is where SDK and backend development takes place. [Runner reference](skills/open-science/references/runner.md) · [Acceptance record](docs/scope.md) · [Open Science source](https://github.com/aipoch/open-science)
+See the runner reference for request examples and recovery. Run `npm test` for regression checks. [Runner reference](skills/open-science/references/runner.md) · [CLI migration](docs/cli-migration.md) · [Official CLI guide](https://github.com/aipoch/open-science/blob/v1.3.0/packages/open-science/CLI.md)

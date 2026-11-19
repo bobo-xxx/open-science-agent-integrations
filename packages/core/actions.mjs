@@ -1,9 +1,14 @@
-import { link, mkdtemp, open, rmdir, unlink } from 'node:fs/promises'
+import { link, mkdtemp, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, parse } from 'node:path'
-import { pipeline } from 'node:stream/promises'
+
+const downloadTimeoutMs = 310_000
 
 export function inputError(message) {
   return Object.assign(new Error(message), { code: 'invalid_input' })
+}
+
+function unsupportedOperation(message) {
+  return Object.assign(new Error(message), { code: 'unsupported_operation' })
 }
 
 function object(value, label) {
@@ -18,6 +23,12 @@ function string(value, label) {
     throw inputError(`${label} must be a nonempty string.`)
   }
   return value
+}
+
+function positional(value, label) {
+  if (value.startsWith('-')) {
+    throw inputError(`${label} cannot begin with a dash for this CLI command.`)
+  }
 }
 
 function keys(value, allowed, label) {
@@ -44,6 +55,69 @@ const runFields = [
 const frameworkIds = [
   'open-science-agent', 'claude-code', 'opencode', 'codex', 'codebuddy', 'pi'
 ]
+
+const runChoices = {
+  permissionProfile: ['ask', 'auto', 'full'],
+  permissionPrompts: ['none'],
+  turnIntent: ['plan-first'],
+  delegationPolicy: ['allow', 'deny']
+}
+
+const reasoningEfforts = ['default', 'low', 'medium', 'high', 'xhigh', 'max']
+
+function validateRun(run) {
+  object(run, 'run')
+  keys(run, runFields, 'run')
+  string(run.project, 'run.project')
+  string(run.prompt, 'run.prompt')
+  if (run.cwd !== undefined) absolute(run.cwd, 'run.cwd')
+  if (run.sessionId !== undefined) string(run.sessionId, 'run.sessionId')
+  if (run.specialist !== undefined) string(run.specialist, 'run.specialist')
+  for (const [field, choices] of Object.entries(runChoices)) {
+    if (run[field] !== undefined && !choices.includes(run[field])) {
+      throw inputError(`run.${field} must be one of: ${choices.join(', ')}.`)
+    }
+  }
+  for (const field of ['autoReviewEnabled', 'memoryEnabled']) {
+    if (run[field] !== undefined && typeof run[field] !== 'boolean') {
+      throw inputError(`run.${field} must be a boolean.`)
+    }
+  }
+  for (const field of ['skillIds', 'enabledComputeHostIds', 'computeHostIds']) {
+    if (run[field] === undefined) continue
+    if (!Array.isArray(run[field])) throw inputError(`run.${field} must be an array of IDs.`)
+    for (const id of run[field]) string(id, `run.${field} entry`)
+  }
+  if (run.permissionPrompts === 'none' && run.turnIntent === 'plan-first') {
+    throw inputError('Plan First requires an interactive run.')
+  }
+  if (run.sessionId !== undefined && run.enabledComputeHostIds !== undefined) {
+    throw unsupportedOperation('The CLI requires a separate configuration update to change the available Compute Hosts of an existing Session. Use the Session settings in Open Science.')
+  }
+  const hasEmptyEnabled = run.enabledComputeHostIds?.length === 0
+  const hasEmptySelected = run.computeHostIds?.length === 0
+  if (hasEmptyEnabled !== hasEmptySelected) {
+    throw unsupportedOperation('The CLI can clear both Compute Host lists for a new Session. Use the Compute Host settings in Open Science to clear just one list.')
+  }
+  if (run.agentConfiguration === undefined) return
+  const settings = object(run.agentConfiguration, 'run.agentConfiguration')
+  keys(settings, ['providerId', 'model', 'reasoningEffort'], 'run.agentConfiguration')
+  if (Object.keys(settings).length === 0) {
+    throw inputError('Omit run.agentConfiguration to keep the existing Agent settings.')
+  }
+  if (settings.providerId !== undefined) {
+    string(settings.providerId, 'run.agentConfiguration.providerId')
+    if (settings.model === undefined) {
+      throw inputError('An explicit provider requires a model or a null model to use the provider default.')
+    }
+  }
+  if (settings.model !== undefined && settings.model !== null) {
+    string(settings.model, 'run.agentConfiguration.model')
+  }
+  if (settings.reasoningEffort !== undefined && !reasoningEfforts.includes(settings.reasoningEffort)) {
+    throw inputError(`run.agentConfiguration.reasoningEffort must be one of: ${reasoningEfforts.join(', ')}.`)
+  }
+}
 
 const actions = {
   instances: [],
@@ -75,12 +149,16 @@ export function validateRequest(request) {
   const action = string(request.action, 'action')
   if (!Object.hasOwn(actions, action)) throw inputError(`Unknown action: ${action}.`)
   keys(request, ['action', ...actions[action]], 'request')
+  if (action === 'sessions') {
+    throw unsupportedOperation('Use a task receipt or supply a Session ID from Open Science. The CLI supports Session lookup by ID.')
+  }
   for (const field of actions[action].filter((field) => field.endsWith('Id'))) {
-    if (['sessions', 'receipts'].includes(action) && request[field] === undefined) continue
-    string(request[field], field)
+    if (action === 'receipts' && request[field] === undefined) continue
+    const value = string(request[field], field)
+    if (field !== 'requestId' && action !== 'receipts') positional(value, field)
   }
   if (action === 'create-project') {
-    string(request.name, 'name')
+    positional(string(request.name, 'name'), 'name')
     if (request.description !== undefined && typeof request.description !== 'string') {
       throw inputError('description must be a string.')
     }
@@ -89,15 +167,7 @@ export function validateRequest(request) {
     if (request.retryIfMissing !== undefined && typeof request.retryIfMissing !== 'boolean') {
       throw inputError('retryIfMissing must be a boolean.')
     }
-    const run = object(request.run, 'run')
-    keys(run, runFields, 'run')
-    string(run.project, 'run.project')
-    string(run.prompt, 'run.prompt')
-    if (run.cwd !== undefined) absolute(run.cwd, 'run.cwd')
-    if (run.sessionId !== undefined) string(run.sessionId, 'run.sessionId')
-    if (run.permissionPrompts === 'none' && run.turnIntent === 'plan-first') {
-      throw inputError('Plan First requires an interactive run.')
-    }
+    validateRun(request.run)
   }
   if (action === 'wait' && request.timeoutMs !== undefined &&
       (!Number.isInteger(request.timeoutMs) || request.timeoutMs < 1 || request.timeoutMs > 25000)) {
@@ -136,34 +206,31 @@ async function download(client, { artifactId, destination }, options) {
   const staging = await mkdtemp(join(dirname(destination), '.open-science-download-'))
   const temporary = join(staging, 'artifact')
   try {
-    const response = await client.downloadArtifact(artifactId, options)
-    if (!response.body) throw new Error('The service returned an empty download stream.')
-    const handle = await open(temporary, 'wx', 0o600)
-    try {
-      await pipeline(response.body, handle.createWriteStream(), options)
-    } finally {
-      await handle.close()
-    }
+    await client(['artifacts', 'download', artifactId, '--output', temporary], {
+      ...options, timeoutMs: downloadTimeoutMs
+    })
     await link(temporary, destination)
     return { artifactId, destination }
   } finally {
-    await unlink(temporary).catch(() => {})
-    await rmdir(staging).catch(() => {})
+    await rm(staging, { recursive: true, force: true }).catch(() => {})
   }
 }
 
 async function switchAgent(client, { framework, expectedFramework }, options) {
-  const runtimes = await client.listRuntimes(options)
+  const runtimes = await client(['runtime', 'list'], options)
   const runtime = runtimes.find(entry => entry.framework === framework)
-  const previous = await client.getAgentRouting(options)
+  const show = ['settings', 'agent-routing', 'show']
+  const previous = await client(show, options)
   const current = previous.configured.framework
   if (current !== expectedFramework) {
     throw Object.assign(new Error(`The selected instance now uses ${current}. Read its routing before retrying.`), {
       code: 'routing_changed'
     })
   }
-  if (current !== framework) await client.updateAgentRouting({ framework }, options)
-  const routing = await client.getAgentRouting(options)
+  if (current !== framework) {
+    await client(['settings', 'agent-routing', 'update', '--framework', framework], options)
+  }
+  const routing = await client(show, options)
   if (routing.configured.framework !== framework) {
     throw Object.assign(new Error('The selected instance does not report the requested framework. Read its routing before retrying.'), {
       code: 'routing_changed'
@@ -172,41 +239,79 @@ async function switchAgent(client, { framework, expectedFramework }, options) {
   return { previousFramework: current, framework, changed: current !== framework, runtime, routing }
 }
 
+function submissionArguments({ requestId, run }) {
+  const args = ['run', '--project', run.project, '--request-id', requestId]
+  for (const [option, value] of [
+    ['--session', run.sessionId],
+    ['--cwd', run.cwd],
+    ['--approval-profile', run.permissionProfile],
+    ['--permission-prompts', run.permissionPrompts]
+  ]) {
+    if (value !== undefined) args.push(option, value)
+  }
+  if (run.turnIntent === 'plan-first') args.push('--plan-first')
+  if (run.autoReviewEnabled !== undefined) {
+    args.push(run.autoReviewEnabled ? '--auto-review' : '--no-auto-review')
+  }
+  if (run.memoryEnabled !== undefined) args.push(run.memoryEnabled ? '--memory' : '--no-memory')
+  if (run.specialist !== undefined) args.push('--specialist', run.specialist)
+  if (run.delegationPolicy !== undefined) args.push('--delegation', run.delegationPolicy)
+  for (const skill of run.skillIds ?? []) args.push('--skill', skill)
+  if (run.computeHostIds?.length === 0) {
+    // Both lists were cleared explicitly. The CLI only exposes a combined clear.
+    args.push('--clear-compute-hosts')
+  } else {
+    for (const host of run.enabledComputeHostIds ?? []) args.push('--enable-compute-host', host)
+    for (const host of run.computeHostIds ?? []) args.push('--compute-host', host)
+  }
+  if (run.agentConfiguration !== undefined) {
+    const { providerId, model, reasoningEffort } = run.agentConfiguration
+    if (providerId !== undefined) args.push('--provider', providerId)
+    if (model === null) args.push('--provider-default-model')
+    else if (model !== undefined) args.push('--model', model)
+    if (reasoningEffort !== undefined) args.push('--reasoning-effort', reasoningEffort)
+  }
+  return args
+}
+
 export async function execute(client, request, { signal } = {}) {
   const options = { signal }
   const { action, projectId, sessionId, requestId, runId } = request
   switch (action) {
-    case 'health': {
-      const health = await client.health(options)
-      return {
-        connected: true,
-        version: health.version ?? health.appVersion,
-        taskCapabilities: health.taskCapabilities ?? []
-      }
-    }
-    case 'doctor': return client.doctor(options)
-    case 'runtimes': return client.listRuntimes(options)
-    case 'projects': return client.listProjects(options)
-    case 'create-project': return client.createProject({
-      name: request.name, description: request.description
-    }, options)
-    case 'sessions': return client.listSessions(projectId, options)
-    case 'session': return client.getSession(sessionId, options)
-    case 'session-config': return client.getSessionConfiguration(sessionId, options)
-    case 'agent-routing': return client.getAgentRouting(options)
+    case 'health': return { connected: true, version: client.status.appVersion, cliVersion: client.version }
+    case 'doctor': return client(['doctor'], options)
+    case 'runtimes': return client(['runtime', 'list'], options)
+    case 'projects': return client(['project', 'list'], options)
+    case 'create-project': return client([
+      'project', 'create', request.name, ...(request.description ? ['--description', request.description] : [])
+    ], options)
+    case 'session': return client(['session', 'status', sessionId], options)
+    case 'session-config': return client(['session', 'config', 'show', sessionId], options)
+    case 'agent-routing': return client(['settings', 'agent-routing', 'show'], options)
     case 'switch-agent': return switchAgent(client, request, options)
-    case 'project-defaults': return client.getProjectSessionDefaults(projectId, options)
-    case 'submission': return client.getSubmission(requestId, options)
-    case 'run': return client.getRun(runId, options)
-    case 'wait': return client.waitForRun(runId, {
-      ...options,
-      returnOnAttention: true,
-      timeoutMs: request.timeoutMs ?? 10000
+    case 'project-defaults': return client(['project', 'session-defaults', 'show', projectId], options)
+    case 'submit': return client(submissionArguments(request), {
+      ...options, stdin: request.run.prompt, allowRunResult: true
     })
-    case 'cancel': return client.cancelRun(runId, options)
-    case 'plan': return client.getSessionPlan(sessionId, options)
-    case 'respond-plan': return client.respondSessionPlan(sessionId, request.response, options)
-    case 'artifacts': return client.listArtifacts(sessionId, options)
+    case 'submission': return client(['run', 'status', '--request-id', requestId], options)
+    case 'run': return client(['run', 'status', runId], options)
+    case 'wait': {
+      const timeoutMs = request.timeoutMs ?? 10000
+      return client(['run', 'wait', runId, '--timeout-ms', String(timeoutMs), '--return-on-attention'], {
+        ...options, timeoutMs: timeoutMs + 30_000, allowRunResult: true
+      })
+    }
+    case 'cancel': return client(['run', 'cancel', runId], options)
+    case 'plan': return client(['plan', 'show', sessionId], options)
+    case 'respond-plan': {
+      const { feedback, decision, artifactVersionId, expectedRevision } = request.response
+      if (feedback !== undefined) return client(['plan', 'revise', sessionId, '--feedback', feedback], options)
+      return client([
+        'plan', decision === 'approved' ? 'approve' : 'reject', sessionId,
+        '--artifact-version', artifactVersionId, '--revision', String(expectedRevision)
+      ], options)
+    }
+    case 'artifacts': return client(['artifacts', 'list', sessionId], options)
     case 'download': return download(client, request, options)
     default: throw inputError(`Unknown action: ${action}.`)
   }

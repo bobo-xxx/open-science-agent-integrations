@@ -5,7 +5,7 @@
   "plugins": [
     {
       "name": "open-science",
-      "description": "Submit and track Open Science research tasks through its local SDK.",
+      "description": "Submit and track Open Science research tasks through the official CLI.",
       "source": "./plugins/open-science"
     }
   ]

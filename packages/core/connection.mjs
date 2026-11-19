@@ -1,167 +1,125 @@
-import { spawn } from 'node:child_process'
-import { once } from 'node:events'
-import { setTimeout as sleep } from 'node:timers/promises'
-import { pathToFileURL } from 'node:url'
+import { execFile } from 'node:child_process'
+import { isAbsolute } from 'node:path'
 import { integrationError, loadConfiguration, selectInstance } from './config.mjs'
-import { claimInstanceOperation } from './locks.mjs'
 
 export { loadConfiguration, selectInstance } from './config.mjs'
 
-const STARTUP_TIMEOUT_MS = 60_000
-const PROBE_INTERVAL_MS = 250
+const probeTimeoutMs = 15_000
+const commandTimeoutMs = 45_000
+const maxOutputBytes = 16 * 1024 * 1024
 
-async function loadSdk(sdkPath) {
-  let sdk
+function readJson(text) {
   try {
-    sdk = await import(pathToFileURL(sdkPath).href)
+    return JSON.parse(text)
   } catch {
-    throw integrationError(
-      'sdk_load_failed',
-      'Could not load sdkPath. Select the index.mjs shipped with the target Open Science installation.'
-    )
-  }
-  if (typeof sdk.connectToOpenScience !== 'function') {
-    throw integrationError('incompatible_sdk', 'The selected SDK lacks connectToOpenScience.')
-  }
-  return sdk
-}
-
-function isOffline(error) {
-  // Current SDKs may also use daemon_unavailable for an HTTP error.
-  return error?.code === 'daemon_unavailable' && error.status == null
-}
-
-function connectionError(error) {
-  if (isOffline(error)) {
-    return integrationError(
-      'daemon_unavailable',
-      'The selected Open Science instance is offline. Start that instance, then try again.'
-    )
-  }
-  const status = error?.status
-  const code = typeof error?.code === 'string' && /^[a-z][a-z0-9_-]{0,63}$/i.test(error.code)
-    ? error.code
-    : 'connection_failed'
-  const message = status === 401 || status === 403
-    ? 'The selected Open Science instance rejected authentication. Check configRoot and the paired SDK.'
-    : 'Could not connect to the selected Open Science instance. Check configRoot and SDK compatibility.'
-  return integrationError(code, message, status)
-}
-
-async function launchApplication({ launch, configRoot }, signal) {
-  signal.throwIfAborted()
-  let failure
-  try {
-    const child = spawn(launch.command, launch.args, {
-      cwd: launch.cwd,
-      detached: true,
-      windowsHide: true,
-      stdio: 'ignore',
-      env: {
-        ...process.env,
-        OPEN_SCIENCE_CONFIG_ROOT: configRoot,
-        OPEN_SCIENCE_STORAGE_ROOT: configRoot
-      }
-    })
-    child.on('error', () => {
-      failure = integrationError('launch_failed', 'Could not start the configured Open Science launcher.')
-    })
-    child.once('exit', (code, exitSignal) => {
-      if (code !== 0) {
-        const reason = exitSignal ?? `exit code ${code}`
-        failure = integrationError('launch_failed', `The configured Open Science launcher stopped (${reason}).`)
-      }
-    })
-    child.unref()
-    await once(child, 'spawn', { signal })
-  } catch {
-    signal.throwIfAborted()
-    throw integrationError('launch_failed', 'Could not start the configured Open Science launcher.')
-  }
-
-  return () => {
-    if (failure) throw failure
+    return undefined
   }
 }
 
-async function claimStartup(binding) {
-  try {
-    return await claimInstanceOperation(binding, 'start')
-  } catch {
-    throw integrationError('startup_lock_failed', 'Could not reserve startup for the selected instance. Start that instance manually.')
+function cliError(value, exitCode) {
+  const detail = value?.error
+  if (!detail || typeof detail.code !== 'string' || !/^[a-z][a-z0-9_-]{0,79}$/i.test(detail.code) ||
+      typeof detail.message !== 'string') return undefined
+  const error = integrationError(detail.code, detail.message)
+  if (Number.isInteger(exitCode)) error.exitCode = exitCode
+  for (const field of ['completionStatus', 'requestId', 'runId']) {
+    if (typeof detail[field] === 'string') error[field] = detail[field]
   }
+  return error
 }
 
-export async function connect({ configPath, instanceId, expectedBinding, start = false, signal, configuration } = {}) {
+function runCli({ command, args = [] }, argv, { stdin, signal, timeoutMs = commandTimeoutMs } = {}) {
   signal?.throwIfAborted()
-  const instance = selectInstance(configuration ?? await loadConfiguration(configPath), instanceId)
+  return new Promise((resolve, reject) => {
+    const child = execFile(command, [...args, ...argv], {
+      encoding: 'utf8',
+      maxBuffer: maxOutputBytes,
+      shell: false,
+      signal,
+      timeout: timeoutMs,
+      windowsHide: true
+    }, (error, stdout, stderr) => {
+      if (signal?.aborted) return reject(signal.reason)
+      if (error?.code === 'ENOENT' || error?.code === 'EACCES') {
+        return reject(integrationError('cli_launch_failed', 'Could not run the configured Open Science CLI. Verify its installed executable.'))
+      }
+      if (error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+        return reject(integrationError('cli_output_too_large', 'Open Science CLI output exceeded the runner limit.'))
+      }
+      if (error?.killed) {
+        return reject(integrationError('cli_timeout', 'The Open Science CLI exceeded the local command deadline. Verify the task status before retrying.'))
+      }
+      if (error && !Number.isInteger(error.code)) {
+        return reject(integrationError('cli_failed', 'Could not complete the Open Science CLI command.'))
+      }
+      resolve({ stdout, stderr, exitCode: error?.code ?? 0 })
+    })
+    // The CLI may exit with a structured error before consuming stdin.
+    child.stdin.on('error', () => {})
+    child.stdin.end(stdin, 'utf8')
+  })
+}
+
+function parseCliResult({ stdout, stderr, exitCode }, { allowRunResult, allowOfflineStatus }) {
+  const result = readJson(stdout)
+  if (exitCode !== 0) {
+    for (const line of stderr.split(/\r?\n/).reverse()) {
+      const error = cliError(readJson(line), exitCode)
+      if (error) throw error
+    }
+    const error = cliError(result, exitCode)
+    if (error) throw error
+    if (allowOfflineStatus && result?.running === false) return result
+    if (allowRunResult && typeof result?.id === 'string' &&
+        ['completed', 'failed', 'cancelled', 'interrupted'].includes(result.status)) return result
+    throw Object.assign(integrationError('cli_failed', 'Open Science CLI returned an unsuccessful exit without a structured result.'), { exitCode })
+  }
+  const error = cliError(result)
+  if (error) throw error
+  if (result === undefined) {
+    throw integrationError('invalid_cli_response', 'Open Science CLI did not return valid JSON.')
+  }
+  return result
+}
+
+export async function connect({ configPath, instanceId, expectedBinding, signal, configuration } = {}) {
+  signal?.throwIfAborted()
+  const loaded = configuration ?? await loadConfiguration(configPath)
+  const instance = selectInstance(loaded, instanceId)
   const { config, binding } = instance
   if (expectedBinding !== undefined && binding !== expectedBinding) {
     throw integrationError('instance_binding_changed', 'The selected instance profile changed. Review the instance configuration before retrying.')
   }
-  const sdk = await loadSdk(config.sdkPath)
-  const timeout = AbortSignal.timeout(STARTUP_TIMEOUT_MS)
-  const probeSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
-  const probe = async () => {
-    probeSignal.throwIfAborted()
-    try {
-      // The public SDK already performs an authenticated health check during discovery.
-      const client = await sdk.connectToOpenScience({ configRoot: config.configRoot, signal: probeSignal })
-      probeSignal.throwIfAborted()
-      return { client, ...instance }
-    } catch (error) {
-      probeSignal.throwIfAborted()
-      throw connectionError(error)
-    }
+
+  const versionReply = await runCli(config.cli, ['--version'], { signal, timeoutMs: probeTimeoutMs })
+  const version = versionReply.stdout.trim()
+  const match = /^(\d+)\.(\d+)\.\d+$/.exec(version)
+  if (versionReply.exitCode !== 0 || !match || +match[1] < 1 || (+match[1] === 1 && +match[2] < 3)) {
+    throw integrationError('incompatible_cli', 'Select the official Open Science CLI from version 1.3.0 or later.')
   }
 
-  try {
-    let releaseStartup
-    // Waiting callers re-probe rather than guessing whether the instance already started.
-    while (true) {
-      try {
-        return await probe()
-      } catch (error) {
-        if (!start || !isOffline(error)) throw error
-      }
-      if (config.launch?.preservesFocus !== true) {
-        throw integrationError('manual_start_required', 'Automatic startup needs a focus-verified launcher for this instance. Start the selected instance manually.')
-      }
-      if (process.platform !== 'win32' && process.platform !== 'linux') {
-        throw integrationError('manual_start_required', 'Automatic startup is unavailable on this platform. Start the selected instance manually.')
-      }
-      releaseStartup = await claimStartup(binding)
-      if (releaseStartup) break
-      await sleep(PROBE_INTERVAL_MS, undefined, { signal: probeSignal })
-    }
-
-    try {
-      try {
-        return await probe()
-      } catch (error) {
-        if (!isOffline(error)) throw error
-      }
-      const checkLauncher = await launchApplication(config, probeSignal)
-      while (true) {
-        checkLauncher()
-        try {
-          return await probe()
-        } catch (error) {
-          if (!isOffline(error)) throw error
-        }
-        await sleep(PROBE_INTERVAL_MS, undefined, { signal: probeSignal })
-      }
-    } finally {
-      releaseStartup()
-    }
-  } catch (error) {
-    signal?.throwIfAborted()
-    if (timeout.aborted) {
-      throw integrationError(
-        'startup_timeout',
-        'The selected Open Science instance was not reachable within 60 seconds. Check the configured launcher and profile.'
-      )
-    }
-    throw error
+  const client = async (args, options = {}) => parseCliResult(
+    await runCli(config.cli, [...args, '--config-root', config.configRoot, '--json'], { signal, ...options }),
+    options
+  )
+  const status = await client(['status'], { timeoutMs: probeTimeoutMs, allowOfflineStatus: true })
+  if (status?.running === false) {
+    throw integrationError('daemon_unavailable', 'The selected Open Science instance is offline. Open that desktop instance normally, then try again.')
   }
+  if (status?.running !== true || typeof status.configRoot !== 'string' ||
+      !isAbsolute(status.configRoot) || typeof status.appVersion !== 'string') {
+    throw integrationError('invalid_cli_response', 'Open Science CLI status did not identify the running instance.')
+  }
+  const reported = selectInstance({
+    instances: { [instance.instanceId]: { ...config, configRoot: status.configRoot } }
+  }, instance.instanceId)
+  if (reported.binding !== binding) {
+    throw integrationError('cli_target_mismatch', 'Open Science CLI status reported a different instance profile.')
+  }
+  if (status.appVersion !== version) {
+    throw integrationError('cli_version_mismatch', 'The Open Science CLI version differs from the selected running service. Use the CLI from that desktop installation.')
+  }
+  client.version = version
+  client.status = status
+  return { client, ...instance }
 }

@@ -1,5 +1,7 @@
 # First Release Acceptance Scope
 
+This record describes the 0.2.0 release. The official CLI adapters use the [CLI migration and acceptance plan](cli-migration.md).
+
 ## Requirements
 
 - Run acceptance tests on the user's Windows machine.

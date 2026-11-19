@@ -1,208 +1,154 @@
 import { strict as assert } from 'node:assert'
-import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
-import { promisify } from 'node:util'
 import { connect, loadConfiguration, selectInstance } from '../packages/core/connection.mjs'
 
-const execFileAsync = promisify(execFile)
-
-async function fixture(t, sdkSource, configValue = {}) {
-  const root = await mkdtemp(join(tmpdir(), 'open-science integration #'))
+async function fixture(t, settings = {}) {
+  const temporaryRoot = await realpath(tmpdir())
+  const root = await mkdtemp(join(temporaryRoot, 'open-science CLI #'))
   t.after(async () => {
     const owned = await realpath(root)
-    assert.equal(dirname(owned), await realpath(tmpdir()))
-    await rm(owned, { force: true, recursive: true })
+    assert.equal(dirname(owned), temporaryRoot)
+    await rm(owned, { recursive: true, force: true })
   })
+
+  const cliPath = join(root, 'fake cli.mjs')
   const configPath = join(root, 'config.json')
-  const sdkPath = join(root, 'sdk.mjs')
-  const configRoot = join(root, 'isolated profile')
-  const config = { sdkPath, configRoot, ...configValue }
-  await writeFile(sdkPath, sdkSource)
-  await writeFile(configPath, JSON.stringify(config))
-  return { root, config, configPath }
+  const commandsPath = join(root, 'calls.jsonl')
+  const configRoot = join(root, 'official profile')
+  const otherRoot = join(root, 'offline profile')
+  const config = { configRoot, cli: { command: process.execPath, args: [cliPath] } }
+  const saveConfig = configValue => writeFile(configPath, JSON.stringify(configValue))
+  await Promise.all([
+    mkdir(configRoot),
+    mkdir(otherRoot),
+    saveConfig({
+      defaultInstance: 'installed',
+      instances: { installed: config, other: { ...config, configRoot: otherRoot } }
+    }),
+    writeFile(cliPath, `
+      import { appendFile } from 'node:fs/promises'
+      import { setTimeout } from 'node:timers/promises'
+      const settings = ${JSON.stringify(settings)}
+      const args = process.argv.slice(2)
+      const chunks = []
+      for await (const chunk of process.stdin) chunks.push(chunk)
+      const stdin = Buffer.concat(chunks).toString('utf8')
+      await appendFile(${JSON.stringify(commandsPath)}, JSON.stringify({ args, stdin }) + '\\n')
+      if (args[0] === '--version') {
+        console.log(settings.cliVersion ?? '1.3.0')
+      } else if (args[0] === 'status') {
+        const configRoot = args[args.indexOf('--config-root') + 1]
+        if (configRoot.includes('offline profile')) {
+          console.log(JSON.stringify({ running: false }))
+          process.exitCode = 3
+        } else {
+          console.log(JSON.stringify({
+            running: true,
+            configRoot: settings.reportedRoot ?? configRoot,
+            appVersion: settings.appVersion ?? '1.3.0'
+          }))
+        }
+      } else if (args[0] === 'structured-error') {
+        console.error('Non-JSON warning')
+        console.error(JSON.stringify({
+          error: { code: 'submission_not_found', message: 'Submission missing', requestId: 'saved-id', completionStatus: 'unconfirmed' },
+          exitCode: 1
+        }))
+        process.exitCode = 1
+      } else if (args[0] === 'failed-run') {
+        console.log(JSON.stringify({ id: 'run-id', status: 'failed', error: 'Provider failed' }))
+        process.exitCode = 1
+      } else if (args[0] === 'slow') {
+        await setTimeout(5000)
+      } else {
+        console.log(JSON.stringify({ args, stdin }))
+      }
+    `)
+  ])
+  const calls = async () => (await readFile(commandsPath, 'utf8')).trim().split('\n').map(JSON.parse)
+  return { root, config, configPath, configRoot, otherRoot, saveConfig, calls }
 }
 
-test('connects only to the explicitly configured profile using the selected SDK file', async t => {
-  const { configPath, config } = await fixture(t, `
-    export function connectToOpenScience(options) {
-      return { connectedRoot: options.configRoot, signalPresent: !!options.signal };
-    }
-  `)
-  const result = await connect({ configPath })
-  assert.deepEqual(result.config, config)
-  assert.equal(result.instanceId, 'default')
-  assert.match(result.binding, /^[a-f0-9]{64}$/)
-  assert.deepEqual(result.client, { connectedRoot: config.configRoot, signalPresent: true })
+test('invokes the selected official CLI with explicit profile, argv and UTF-8 stdin', async t => {
+  const { configPath, configRoot, calls } = await fixture(t)
+  const { client, instanceId } = await connect({ configPath })
+  const prompt = '结果 (draft) & review'
+  assert.equal(instanceId, 'installed')
+  assert.equal(client.version, '1.3.0')
+  assert.equal(client.status.configRoot, configRoot)
+  assert.deepEqual(await client(['run', '--project', 'Project & review'], { stdin: prompt }), {
+    args: ['run', '--project', 'Project & review', '--config-root', configRoot, '--json'],
+    stdin: prompt
+  })
+  assert.deepEqual((await calls()).map(call => call.args[0]), ['--version', 'status', 'run'])
 })
 
-test('selects named instances explicitly and never retries an offline instance against the default', async t => {
-  const { root, config, configPath } = await fixture(t, `
-    export function connectToOpenScience({ configRoot }) {
-      if (configRoot.endsWith('offline')) {
-        throw Object.assign(new Error('offline'), { code: 'daemon_unavailable' });
-      }
-      return { configRoot };
-    }
-  `)
-  const second = { sdkPath: config.sdkPath, configRoot: join(root, 'offline'), name: 'Other instance' }
-  await writeFile(configPath, JSON.stringify({
-    defaultInstance: 'dev', instances: { dev: config, other: second }
-  }))
-  const configuration = await loadConfiguration(configPath)
-  assert.equal(configuration.stateDirectory, join(root, 'receipts'))
-  assert.equal(selectInstance(configuration).instanceId, 'dev')
-  const offline = selectInstance(configuration, 'other')
-  assert.equal(offline.config.name, 'Other instance')
-  assert.notEqual(offline.binding, selectInstance(configuration, 'dev').binding)
-  assert.deepEqual((await connect({ configuration })).client, { configRoot: config.configRoot })
-  await assert.rejects(connect({ configuration, instanceId: 'other' }), { code: 'daemon_unavailable' })
-  await assert.rejects(connect({ configuration, instanceId: 'typo' }), { code: 'instance_not_found' })
+test('an offline target uses only its scoped status command and asks for desktop startup', async t => {
+  const { configPath, otherRoot, calls } = await fixture(t)
+  await assert.rejects(connect({ configPath, instanceId: 'other' }), { code: 'daemon_unavailable' })
+  await assert.rejects(connect({ configPath, instanceId: 'typo' }), { code: 'instance_not_found' })
+  assert.deepEqual(await calls(), [
+    { args: ['--version'], stdin: '' },
+    { args: ['status', '--config-root', otherRoot, '--json'], stdin: '' }
+  ])
 })
 
-test('retains the binding across a profile alias and SDK upgrade but detects a profile rebind', async t => {
-  const { root, config, configPath } = await fixture(t, '')
-  const linkedRoot = join(root, 'profile link')
-  const nextRoot = join(root, 'different profile')
-  await mkdir(config.configRoot)
-  await mkdir(nextRoot)
-  await symlink(config.configRoot, linkedRoot, 'junction')
+test('rejects stale CLI commands and service version mismatches', async t => {
+  const stale = await fixture(t, { cliVersion: '0.1.0' })
+  await assert.rejects(connect({ configPath: stale.configPath }), { code: 'incompatible_cli' })
+  assert.deepEqual((await stale.calls()).map(call => call.args[0]), ['--version'])
+
+  const mismatch = await fixture(t, { appVersion: '1.3.1' })
+  await assert.rejects(connect({ configPath: mismatch.configPath }), { code: 'cli_version_mismatch' })
+})
+
+test('rejects a CLI status that resolves to another profile', async t => {
+  const { configPath } = await fixture(t, { reportedRoot: await realpath(tmpdir()) })
+  await assert.rejects(connect({ configPath }), { code: 'cli_target_mismatch' })
+})
+
+test('keeps a physical profile binding through an alias and detects a rebind', async t => {
+  const { root, config, configPath, otherRoot, saveConfig } = await fixture(t)
+  const link = join(root, 'profile link')
+  await symlink(config.configRoot, link, 'junction')
   const selected = selectInstance(await loadConfiguration(configPath))
-  await writeFile(configPath, JSON.stringify({
-    ...config, configRoot: linkedRoot, sdkPath: join(root, 'new-sdk.mjs')
-  }))
+  await saveConfig({
+    defaultInstance: 'installed',
+    instances: { installed: { ...config, configRoot: link } }
+  })
   const configuration = await loadConfiguration(configPath)
-  const viaLink = selectInstance(configuration)
-  assert.equal(viaLink.binding, selected.binding)
-  assert.equal(viaLink.config.configRoot, await realpath(config.configRoot))
-
-  await unlink(linkedRoot)
-  await symlink(nextRoot, linkedRoot, 'junction')
-  assert.notEqual(selectInstance(configuration).binding, selected.binding)
-  // The SDK path is intentionally missing, so the mismatch must be reported before SDK loading.
+  assert.equal((await connect({ configuration })).binding, selected.binding)
+  await unlink(link)
+  await symlink(otherRoot, link, 'junction')
   await assert.rejects(connect({ configuration, expectedBinding: selected.binding }), {
     code: 'instance_binding_changed'
   })
 })
 
-test('rejects relative SDK and profile paths before loading any SDK', async t => {
-  for (const field of ['sdkPath', 'configRoot']) {
-    const { configPath } = await fixture(t, 'throw new Error("SDK must not be loaded")', {
-      [field]: 'relative/path'
-    })
-    await assert.rejects(connect({ configPath }), {
-      code: 'invalid_config',
-      message: `${field} must be an absolute path.`
-    })
-  }
-})
-
-test('does not launch on HTTP authentication failure reported as daemon_unavailable', async t => {
-  const { configPath } = await fixture(t, `
-    export function connectToOpenScience() {
-      throw Object.assign(new Error('sensitive local secret'), {
-        code: 'daemon_unavailable', status: 401
-      });
-    }
-  `, { launch: { command: join(tmpdir(), 'must-not-start.exe'), preservesFocus: true } })
-  await assert.rejects(connect({ configPath, start: true }), error => {
-    assert.equal(error.code, 'daemon_unavailable')
-    assert.equal(error.status, 401)
-    assert.match(error.message, /rejected authentication/i)
-    assert.doesNotMatch(String(error), /sensitive local secret/)
-    return true
+test('preserves structured CLI errors and opt-in terminal Run results', async t => {
+  const { configPath } = await fixture(t)
+  const { client } = await connect({ configPath })
+  await assert.rejects(client(['structured-error']), {
+    code: 'submission_not_found',
+    exitCode: 1,
+    requestId: 'saved-id',
+    completionStatus: 'unconfirmed'
+  })
+  await assert.rejects(client(['failed-run']), { code: 'cli_failed' })
+  assert.deepEqual(await client(['failed-run'], { allowRunResult: true }), {
+    id: 'run-id', status: 'failed', error: 'Provider failed'
   })
 })
 
-test('a configured launcher is opt-in and skips launch when the instance is reachable', async t => {
-  const { configPath } = await fixture(t, `
-    export function connectToOpenScience() {
-      if (process.env.OPEN_SCIENCE_TEST_REACHABLE === 'yes') return { connected: true };
-      throw Object.assign(new Error('offline'), { code: 'daemon_unavailable' });
-    }
-  `, { launch: { command: join(tmpdir(), 'must-not-start.exe') } })
-  await assert.rejects(connect({ configPath }), { code: 'daemon_unavailable' })
-  await assert.rejects(connect({ configPath, start: true }), { code: 'manual_start_required' })
-  const original = process.env.OPEN_SCIENCE_TEST_REACHABLE
-  t.after(() => {
-    if (original === undefined) delete process.env.OPEN_SCIENCE_TEST_REACHABLE
-    else process.env.OPEN_SCIENCE_TEST_REACHABLE = original
-  })
-  process.env.OPEN_SCIENCE_TEST_REACHABLE = 'yes'
-  assert.deepEqual((await connect({ configPath, start: true })).client, { connected: true })
-})
-
-test('two processes share one focus-certified startup attempt for the selected profile', {
-  skip: process.platform !== 'win32' && process.platform !== 'linux'
-}, async t => {
-  const { root, config, configPath } = await fixture(t, `
-    import { readFile } from 'node:fs/promises';
-    export async function connectToOpenScience({ configRoot }) {
-      try {
-        const launchedRoot = await readFile(new URL('ready.txt', import.meta.url), 'utf8');
-        return { configRoot, launchedRoot };
-      } catch {
-        throw Object.assign(new Error('offline'), { code: 'daemon_unavailable' });
-      }
-    }
-  `)
-  const launcher = join(root, 'launch.mjs')
-  const launchesFile = join(root, 'launches.txt')
-  const readyFile = join(root, 'ready.txt')
-  await writeFile(launcher, `
-    import { appendFile, rename, writeFile } from 'node:fs/promises';
-    import { setTimeout } from 'node:timers/promises';
-    await appendFile(process.argv[2], 'launch\\n');
-    await setTimeout(600);
-    const temporary = process.argv[3] + '.tmp';
-    await writeFile(temporary, process.env.OPEN_SCIENCE_CONFIG_ROOT);
-    await rename(temporary, process.argv[3]);
-  `)
-  await writeFile(configPath, JSON.stringify({
-    ...config,
-    launch: { command: process.execPath, args: [launcher, launchesFile, readyFile], cwd: root, preservesFocus: true }
-  }))
-
-  const check = join(root, 'check.mjs')
-  await writeFile(check, `
-    import { connect } from ${JSON.stringify(new URL('../packages/core/connection.mjs', import.meta.url).href)};
-    const result = await connect({ configPath: process.argv[2], start: true });
-    console.log(JSON.stringify(result.client));
-  `)
-  const results = await Promise.all(Array.from({ length: 2 }, () =>
-    execFileAsync(process.execPath, [check, configPath], { windowsHide: true, timeout: 10000 })
-  ))
-  for (const { stdout } of results) {
-    assert.deepEqual(JSON.parse(stdout), { configRoot: config.configRoot, launchedRoot: config.configRoot })
-  }
-  assert.equal(await readFile(launchesFile, 'utf8'), 'launch\n')
-})
-
-test('surfaces launcher errors without waiting for a startup timeout', {
-  skip: process.platform !== 'win32' && process.platform !== 'linux'
-}, async t => {
-  const { root, config, configPath } = await fixture(t, `
-    export function connectToOpenScience() {
-      throw Object.assign(new Error('offline'), { code: 'daemon_unavailable' });
-    }
-  `)
-  await writeFile(configPath, JSON.stringify({
-    ...config,
-    launch: { command: join(root, 'no-such-launcher.exe'), preservesFocus: true }
-  }))
-  await assert.rejects(connect({ configPath, start: true }), { code: 'launch_failed' })
-})
-
-test('a cancelled request never starts an application', async t => {
-  const { configPath } = await fixture(t, `
-    export function connectToOpenScience() {
-      throw Object.assign(new Error('offline'), { code: 'daemon_unavailable' });
-    }
-  `, { launch: { command: join(tmpdir(), 'must-not-start.exe') } })
+test('bounds the local child command and honors cancellation before launching', async t => {
+  const { configPath } = await fixture(t)
   const controller = new AbortController()
   const reason = new Error('cancelled by caller')
   controller.abort(reason)
-  await assert.rejects(connect({ configPath, start: true, signal: controller.signal }), reason)
+  await assert.rejects(connect({ configPath, signal: controller.signal }), reason)
+  const { client } = await connect({ configPath })
+  await assert.rejects(client(['slow'], { timeoutMs: 100 }), { code: 'cli_timeout' })
 })

@@ -22,7 +22,7 @@ Configuration is selected by `--config`, then `OPEN_SCIENCE_INTEGRATIONS_CONFIG`
 | `sessions` | `projectId` optional |
 | `session`, `session-config`, `artifacts`, `plan` | `sessionId` |
 | `project-defaults` | `projectId` |
-| `submit` | `requestId`, `run` |
+| `submit` | `requestId`, `run`, optional boolean `retryIfMissing` |
 | `submission` | `requestId` |
 | `run`, `cancel` | `runId` |
 | `wait` | `runId`, optional `timeoutMs` from 1 to 25000, default 10000 |
@@ -31,7 +31,7 @@ Configuration is selected by `--config`, then `OPEN_SCIENCE_INTEGRATIONS_CONFIG`
 
 Successful submission returns a receipt. `pending` means the run is being admitted. `accepted` includes the Run ID. `failed` or `interrupted` requires inspecting the returned error and current state. A wait deadline ends local observation. Use `cancel` to stop a run at the user's request. The runner uses durable submissions, which require the `durable-submissions` service capability.
 
-The local reservation is saved before the SDK submits the request. Reusing its ID queries the original submission. A local receipt can exist before the service returns one. If a lookup is inconclusive, keep the ID and report the uncertainty to the user. An indexed request or Run always resolves to its original target, even after the default changes. Restore the binding if the original target has changed. For a known request or Run ID without a local receipt, provide the target explicitly with `--instance`.
+The local receipt is saved before the SDK submits the request, so it can exist before the service has a receipt. `submission` is a read-only service query. Repeating `submit` with the same ID uses the same query by default. For an indexed request or Run, the runner resolves the target from its receipt even after the default changes. Restore the binding if the original target has changed. For a known request or Run ID without a local receipt, provide the target explicitly with `--instance`.
 
 For calls that use a Session or artifact ID, select the instance from the preceding Run reply with `--instance <id>`. Those IDs are resolved inside that instance.
 
@@ -48,3 +48,9 @@ For calls that use a Session or artifact ID, select the instance from the preced
 Switches from the three adapters share an instance lock. On `routing_busy` or `routing_changed`, read the current setting before retrying. The public SDK has no atomic compare-and-set for edits performed from the Open Science interface or other clients, so the runner checks the setting again after the write.
 
 Choose an unused destination in an existing local directory for downloads. The runner publishes the complete file at the destination and refuses to replace existing files. The destination filesystem must support hard links for this operation.
+
+## Retry a missing submission
+
+When the user requests a retry, look up the original request with `submission` on its bound instance. If the service returns HTTP 404 with `submission_not_found`, the local task receipt has no known Run ID, and you still have the exact original request, resend that `submit` with `retryIfMissing: true`. Keep the original `requestId` and the complete `run` object, including the same project, session, prompt, and options.
+
+The runner requires the same status and error code when it repeats the lookup before resending. It returns any existing service receipt, including `accepted`, `failed`, or `interrupted`, for inspection. If the lookup is inconclusive or the original request is unavailable, keep the original ID and report the blocker.

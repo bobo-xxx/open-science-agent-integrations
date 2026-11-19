@@ -4,7 +4,7 @@ Use Codex, Claude Code, or WorkBuddy to submit research tasks to Open Science, r
 
 ## Ask your agent to install
 
-Send the prompt for your host in a session with terminal and file access on the computer running Open Science. GitHub provides the source. The agent builds the adapter and connects it to the SDK and service on that computer.
+Send the prompt for your host in a session with terminal and file access on the computer running Open Science. This guide uses the official Open Science 1.3.0 Windows desktop release as its baseline. [Open Science 1.3.0](https://github.com/aipoch/open-science/releases/tag/v1.3.0)
 
 ### Codex
 
@@ -22,22 +22,24 @@ Send the prompt for your host in a session with terminal and file access on the 
 
 Resolve repository paths from the checkout and expand `~` to the current user's home directory.
 
-1. Check for Node.js 22.13 or newer and an Open Science installation with the SDK on this computer.
-2. Clone the repository and build the adapters. Reuse an existing checkout if appropriate and preserve its local changes.
+1. Check for Git, Node.js 22.13 or newer, and npm. For Codex and Claude Code, confirm that `codex` or `claude`, respectively, is available and supports the plugin commands below. Use local mode in WorkBuddy.
+2. Build from the requested GitHub revision, or `main` if the user gave no revision. Reuse an existing checkout only after confirming its `origin` is this GitHub repository, `git status --porcelain` is empty, and `HEAD` matches the requested revision fetched from GitHub. Otherwise use a separate checkout. Record the output of `git rev-parse HEAD` as the build's source revision. For a fresh default checkout, run these commands from a parent directory that does not already contain `open-science-agent-integrations`.
 
    ```sh
-   git clone https://github.com/bobo-xxx/open-science-agent-integrations.git
+   git clone --branch main https://github.com/bobo-xxx/open-science-agent-integrations.git
    cd open-science-agent-integrations
    npm run build
+   git rev-parse HEAD
    ```
 
-3. Check the configuration selected by `OPEN_SCIENCE_INTEGRATIONS_CONFIG`, or `~/.open-science-agent-integrations/config.json` by default, for the intended instance. If setup is needed, locate the SDK and profile on the user's computer. Ask which instance to use if several are available and the user has not chosen one.
+3. Select the Open Science instance the user requested. Use the official desktop instance for a standard installation. If several instances match the request, ask which one to use. If the selected instance is offline, use the normal app shortcut for the official desktop so it opens with its existing profile and credentials. For an explicitly selected development instance, use that instance's launcher. Locate the selected instance's SDK and profile on the same computer.
 
    - For an installed app, use `resources/packages/open-science/index.mjs` under the installation directory.
    - For a development checkout, use `packages/open-science/index.mjs` under that checkout.
-   - Use the directory containing the instance's `web-service.json` as `configRoot`. Keep installed and development instances on separate profiles.
+   - Use the directory containing the selected service's `web-service.json` as `configRoot`. The standard Windows installation normally uses `~/.open-science`. Keep installed and development profiles separate.
 
-4. When creating a configuration, copy the example and replace its placeholders with the absolute `sdkPath` and `configRoot` resolved on this computer. Set `defaultInstance` to one of the configured IDs. Run `npm run configure -- <prepared-config.json>` with that file. The command preserves an existing configuration. Edit that configuration directly for a requested update. [Windows configuration example](examples/config.windows.json)
+4. Check `OPEN_SCIENCE_INTEGRATIONS_CONFIG`, or `~/.open-science-agent-integrations/config.json` by default. Reuse the exact ID of an existing entry that matches the selected SDK and profile. For a new configuration, copy the example, fill in the absolute `sdkPath` and `configRoot`, and run `npm run configure -- <prepared-config.json>`. The example sets the official instance ID and default to `installed`. For an existing configuration that lacks the target, add it under an unused ID and preserve the existing default. If converting a legacy single-instance configuration, preserve its entry and default under the ID `default`. [Windows configuration example](examples/config.windows.json)
+5. Use the selected instance ID explicitly in SDK probes and new-chat prompts, even when it is already the default. The examples below use `installed`. Substitute the ID you resolved if it differs.
 
 ## Host install steps
 
@@ -50,7 +52,9 @@ codex plugin marketplace add (Resolve-Path 'dist/codex').Path
 codex plugin add open-science@open-science-integrations-local
 ```
 
-In a new Codex chat, check that `open-science:open-science` is available and ask it to list projects.
+Verify the Open Science connection, then give the user this prompt for a new Codex chat to verify that Codex discovers the skill. [Connection checks](#verify-the-open-science-connection)
+
+> Use the `open-science:open-science` skill to list projects for Open Science instance `installed`. Pass `--instance installed` to the runner and report the returned `instanceId`.
 
 ### Install in Claude Code
 
@@ -61,7 +65,11 @@ claude plugin marketplace add (Resolve-Path 'dist/claude-code').Path
 claude plugin install open-science@open-science-integrations-local
 ```
 
-In a new Claude Code session, invoke `/open-science:open-science` and ask it to list projects. To load the plugin for a single session, run this from the repository root in PowerShell.
+Verify the Open Science connection, then give the user this prompt for a new Claude Code session to verify that Claude Code discovers the skill. [Connection checks](#verify-the-open-science-connection)
+
+> /open-science:open-science List projects for Open Science instance `installed`. Pass `--instance installed` to the runner and report the returned `instanceId`.
+
+To load the plugin for a single session, run this from the repository root in PowerShell.
 
 ```powershell
 claude --plugin-dir (Resolve-Path 'dist/claude-code/plugins/open-science').Path
@@ -72,10 +80,10 @@ claude --plugin-dir (Resolve-Path 'dist/claude-code/plugins/open-science').Path
 Use your terminal and file tools in local mode to complete shared setup and install the skill.
 
 1. Deploy the contents of `dist/workbuddy/open-science` to `~/.workbuddy/skills/open-science`. Place `SKILL.md`, `scripts`, and `references` directly under the destination. If those files already match the build, reuse the existing copy. [WorkBuddy skill directory](https://skillhub.cn/install/skillhub.md)
-2. Check the deployed files. Run the installed `scripts/runner.mjs` with `--no-start` and send `{"action":"projects"}` on stdin. Report the install location and the SDK result. If the instance is offline, ask the user to start it and retry the check.
+2. Check the deployed files. Verify the Open Science connection with the installed `scripts/runner.mjs` and report the install location. [Connection checks](#verify-the-open-science-connection)
 3. To verify skill discovery, give the user this prompt to send in a new local WorkBuddy chat.
 
-   > Use the `open-science` skill to list projects in my default Open Science instance.
+   > Use the `open-science` skill to list projects for Open Science instance `installed`. Pass `--instance installed` to the runner and report the returned `instanceId`.
 
 If the new chat cannot find the skill, ask the user to restart WorkBuddy and retry. If directory installation is blocked or the skill still cannot be found after a restart, report the blocker, give the user the absolute path to the built `dist/workbuddy/open-science.zip`, and point them to **Skills → Add Skill → Upload Skill**. For workspace-scoped installation, deploy the skill under the active coding workspace's `.codebuddy/skills/` directory. [WorkBuddy skill import](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) · [Workspace skills](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Project)
 
@@ -83,18 +91,25 @@ On Windows, WorkBuddy installed the skill into the user-level directory after a 
 
 ## Verify the Open Science connection
 
-Start the selected Open Science instance if it is offline. From the repository root, run these read-only PowerShell probes.
+Run these read-only PowerShell probes from the repository root. Confirm the configured ID with `instances`, then pass it explicitly to `health` and `doctor`. For WorkBuddy, substitute the path to the deployed `scripts/runner.mjs`.
 
 ```powershell
 '{"action":"instances"}' | node packages/core/runner.mjs
-'{"action":"health"}' | node packages/core/runner.mjs --no-start
+'{"action":"health"}' | node packages/core/runner.mjs --instance installed --no-start
+'{"action":"doctor"}' | node packages/core/runner.mjs --instance installed --no-start
 ```
 
-Expect `ok: true` and the service's version and capabilities. Pass `--instance <id>` if the selected target differs from the default. Use `doctor` to check model and runtime readiness. Task submission requires an Open Science service with `durable-submissions` support. Listing projects in a new host chat verifies that the host loaded the skill and can use the configured instance.
+Report the built commit SHA, the returned `instanceId`, and the version reported by `health`. The `health` and `doctor` replies must have `ok: true` and match the selected ID. Check that `health.result.taskCapabilities` includes `durable-submissions` and `doctor.result.ready` is `true`. Confirm skill discovery separately when the host lists projects for the same ID in a new chat.
+
+If verification fails, keep the selected instance and report the SDK error code or missing capability.
+
+- For a missing `web-service.json` or an offline service, start the selected instance and check its profile again. [Shared setup](#shared-setup)
+- For `sdk_load_failed` or `incompatible_sdk`, resolve `index.mjs` from that desktop installation and retry.
+- If authentication is rejected, confirm the SDK and `configRoot` belong to the same running instance and that the agent and app run under the same Windows account. The SDK reads the service credentials from the selected profile.
 
 ## Update or remove an adapter
 
-To update, pull from GitHub in the local checkout and rerun `npm run build`. Then apply the steps for the selected host.
+To update, build the requested GitHub revision, then apply the steps for the selected host. [Shared setup](#shared-setup)
 
 | Host | Update | Remove |
 | --- | --- | --- |

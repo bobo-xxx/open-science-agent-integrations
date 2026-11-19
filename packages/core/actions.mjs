@@ -59,7 +59,7 @@ const actions = {
   'agent-routing': [],
   'switch-agent': ['framework', 'expectedFramework'],
   'project-defaults': ['projectId'],
-  submit: ['requestId', 'run'],
+  submit: ['requestId', 'run', 'retryIfMissing'],
   submission: ['requestId'],
   run: ['runId'],
   wait: ['runId', 'timeoutMs'],
@@ -86,6 +86,9 @@ export function validateRequest(request) {
     }
   }
   if (action === 'submit') {
+    if (request.retryIfMissing !== undefined && typeof request.retryIfMissing !== 'boolean') {
+      throw inputError('retryIfMissing must be a boolean.')
+    }
     const run = object(request.run, 'run')
     keys(run, runFields, 'run')
     string(run.project, 'run.project')

@@ -52,9 +52,18 @@ async function submission(client, requestId, options, stateDirectory) {
   return result
 }
 
-async function submit(client, request, context) {
-  const { requestId, run } = request
-  const { configuration: { stateDirectory }, target, options } = context
+async function submit(client, request, { configuration, target, options, receipt }) {
+  const { requestId, run, retryIfMissing } = request
+  const { stateDirectory } = configuration
+  if (receipt) {
+    try {
+      return await submission(client, requestId, options, stateDirectory)
+    } catch (error) {
+      if (!retryIfMissing || receipt.runId !== undefined ||
+          error?.code !== 'submission_not_found' || error.status !== 404) throw error
+    }
+  }
+
   const health = await client.health(options)
   if (!health.taskCapabilities?.includes('durable-submissions')) {
     fail('unsupported_capability', 'The selected instance does not support durable submissions.')
@@ -62,14 +71,23 @@ async function submit(client, request, context) {
   if (run.permissionPrompts === 'none' && !health.taskCapabilities?.includes('permission-prompts-none')) {
     fail('unsupported_capability', 'The selected instance does not support unattended runs.')
   }
-  const { created, receipt } = await reserveReceipt(stateDirectory, {
-    requestId,
-    instanceId: target.instanceId,
-    binding: target.binding,
-    projectId: run.project,
-    ...(run.sessionId === undefined ? {} : { sessionId: run.sessionId })
-  })
-  if (!created) return submission(client, receipt.requestId, options, stateDirectory)
+  if (receipt) {
+    // Another host may have recorded a Run while this request was checking the service.
+    const latest = await getReceipt(stateDirectory, requestId)
+    if (!latest) fail('receipt_not_found', 'No local receipt matches this request ID for retry.')
+    checkSubmitIdentity(latest, request)
+    selectReceiptTarget(configuration, latest, target.instanceId)
+    if (latest.runId !== undefined) return submission(client, requestId, options, stateDirectory)
+  } else {
+    const { created } = await reserveReceipt(stateDirectory, {
+      requestId,
+      instanceId: target.instanceId,
+      binding: target.binding,
+      projectId: run.project,
+      ...(run.sessionId === undefined ? {} : { sessionId: run.sessionId })
+    })
+    if (!created) return submission(client, requestId, options, stateDirectory)
+  }
 
   const result = await client.submitRun(requestId, run, options)
   if (result.requestId !== requestId) fail('invalid_response', 'The service returned a different request ID.')
@@ -117,6 +135,9 @@ export async function operate(configuration, request, { instanceId, start = true
   if (['submit', 'submission'].includes(request.action)) {
     receipt = await getReceipt(configuration.stateDirectory, request.requestId)
     if (request.action === 'submit' && receipt) checkSubmitIdentity(receipt, request)
+    if (request.action === 'submit' && request.retryIfMissing && !receipt) {
+      fail('receipt_not_found', 'No local receipt matches this request ID for retry.')
+    }
     if (request.action === 'submission' && !receipt && instanceId === undefined) {
       fail('receipt_not_found', 'No local receipt matches this request ID. Select an instance explicitly to query a known remote request.')
     }
@@ -134,10 +155,10 @@ export async function operate(configuration, request, { instanceId, start = true
   })
   const options = { signal }
   let result
-  if (request.action === 'submission' || (request.action === 'submit' && receipt)) {
+  if (request.action === 'submission') {
     result = await submission(client, request.requestId, options, receipt && configuration.stateDirectory)
   } else if (request.action === 'submit') {
-    result = await submit(client, request, { configuration, target, options })
+    result = await submit(client, request, { configuration, target, options, receipt })
   } else if (request.action === 'switch-agent') {
     result = await switchAgent(client, request, target, options)
   } else {

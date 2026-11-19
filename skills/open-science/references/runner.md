@@ -26,7 +26,7 @@ Configuration is selected by `--config`, then `OPEN_SCIENCE_INTEGRATIONS_CONFIG`
 | `run`, `cancel` | `runId` |
 | `wait` | `runId`, optional `timeoutMs` from 1 to 25000, default 10000 |
 | `respond-plan` | `sessionId`, `response` |
-| `download` | `artifactId`, absolute `destination` on the local machine |
+| `download` | `artifactId` from the listed item's `id`, absolute `destination` on the local machine |
 
 Initial `submit` waits for CLI admission and returns an `accepted` receipt with `runId`, `runStatus`, and the Session ID when available. A `submission` lookup can return `pending`, `accepted`, `failed`, or `interrupted`. Inspect an accepted Run by ID, and report its actual status separately from receipt status. A wait deadline ends local observation. Use `cancel` to stop a Run at the user's request.
 
@@ -46,7 +46,7 @@ The `run` object in `submit` accepts `sessionId`, absolute `cwd`, `permissionPro
 
 Switches from the three adapters share an instance lock. The runner reads the setting after an update to check the outcome. On `routing_busy` or `routing_changed`, read the current setting before retrying.
 
-Choose an unused destination in an existing local directory for downloads. The runner publishes the complete file at the destination and refuses to replace existing files. The destination filesystem must support hard links for this operation.
+The Open Science CLI downloads by the listed version's `id`. Some entries also have an `artifactId` that groups versions. Choose an unused destination in an existing local directory. The runner publishes the complete file at the destination and refuses to replace existing files. The destination filesystem must support hard links.
 
 ## Retry a missing submission
 

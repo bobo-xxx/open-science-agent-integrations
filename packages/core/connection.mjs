@@ -28,6 +28,21 @@ function cliError(value, exitCode) {
   return error
 }
 
+function findCliError(result, stderr, exitCode) {
+  for (const line of stderr.split(/\r?\n/).reverse()) {
+    const error = cliError(readJson(line), exitCode)
+    if (error) return error
+  }
+  return cliError(result, exitCode)
+}
+
+function unexpectedCliExit(exitCode) {
+  return Object.assign(
+    integrationError('cli_failed', 'Open Science CLI returned an unsuccessful exit without a structured result.'),
+    { exitCode }
+  )
+}
+
 function runCli({ command, args = [] }, argv, { stdin, signal, timeoutMs = commandTimeoutMs } = {}) {
   signal?.throwIfAborted()
   return new Promise((resolve, reject) => {
@@ -63,17 +78,13 @@ function runCli({ command, args = [] }, argv, { stdin, signal, timeoutMs = comma
 function parseCliResult({ stdout, stderr, exitCode }, { allowRunResult, allowUnavailableStatus }) {
   const result = readJson(stdout)
   if (exitCode !== 0) {
-    for (const line of stderr.split(/\r?\n/).reverse()) {
-      const error = cliError(readJson(line), exitCode)
-      if (error) throw error
-    }
-    const error = cliError(result, exitCode)
+    const error = findCliError(result, stderr, exitCode)
     if (error) throw error
     if (allowUnavailableStatus && (result?.running === false ||
         (result?.running === null && result.status === 'unreachable'))) return result
     if (allowRunResult && typeof result?.id === 'string' &&
         ['completed', 'failed', 'cancelled', 'interrupted'].includes(result.status)) return result
-    throw Object.assign(integrationError('cli_failed', 'Open Science CLI returned an unsuccessful exit without a structured result.'), { exitCode })
+    throw unexpectedCliExit(exitCode)
   }
   const error = cliError(result)
   if (error) throw error
@@ -81,6 +92,24 @@ function parseCliResult({ stdout, stderr, exitCode }, { allowRunResult, allowUna
     throw integrationError('invalid_cli_response', 'Open Science CLI did not return valid JSON.')
   }
   return result
+}
+
+async function requireResearchFilm(cli, signal) {
+  const { stdout, stderr, exitCode } = await runCli(cli, ['help', 'film'], { signal, timeoutMs: probeTimeoutMs })
+  const result = readJson(stdout)
+  const error = exitCode === 0 ? cliError(result) : findCliError(result, stderr, exitCode)
+  const unknownFilm = 'Unknown command: film'
+  const unsupported = error
+    ? error.code === 'invalid_cli_usage' && error.message.trim() === unknownFilm
+    : exitCode === 2 && [stdout.trim(), stderr.trim()].includes(unknownFilm)
+  if (unsupported) {
+    throw integrationError('unsupported_operation', 'The selected Open Science CLI does not support Research Film. Configure a matching Open Science build that provides the film command.')
+  }
+  if (error) throw error
+  if (exitCode !== 0) throw unexpectedCliExit(exitCode)
+  if (!/^Usage:\s+open-science\s+film\b/m.test(stdout)) {
+    throw integrationError('invalid_cli_response', 'Open Science CLI did not return Research Film help.')
+  }
 }
 
 export async function connect({ configPath, instanceId, expectedBinding, signal, configuration } = {}) {
@@ -125,5 +154,6 @@ export async function connect({ configPath, instanceId, expectedBinding, signal,
   }
   client.version = version
   client.status = status
+  client.requireResearchFilm = () => requireResearchFilm(config.cli, signal)
   return { client, ...instance }
 }

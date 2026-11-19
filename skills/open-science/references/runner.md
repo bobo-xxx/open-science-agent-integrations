@@ -48,6 +48,33 @@ Switches from the three adapters share an instance lock. The runner reads the se
 
 The Open Science CLI downloads by the listed version's `id`. Some entries also have an `artifactId` that groups versions. Choose an unused destination in an existing local directory. The runner publishes the complete file at the destination and refuses to replace existing files. The destination filesystem must support hard links.
 
+## Research Films
+
+Film actions require a matching CLI and local service with Research Film support. The standalone service can run with the desktop app closed. Use the instance and Session of the source conversation. Choose `research-explanation` for a narrated explanation of the findings or `operation-replay` for a narrated account of recorded operations. The export is a self-contained HTML player.
+
+Every Film action accepts `projectId`, `sessionId`, `mode`, and an optional `branchId`. When the branch is omitted, the service uses the active branch. Keep the returned `branchId` and pass it with the same `--instance` on each follow-up call.
+
+| Action | Additional fields |
+| --- | --- |
+| `film-status` | None. Inspect progress, review findings, or a published player. |
+| `film-start` | Optional booleans `installNarration`, `resume`, `advisoryNarrationReview`. |
+| `film-revise` | `attemptId` from `reviewFailure`, `feedback`, optional boolean `advisoryNarrationReview`. |
+| `film-cancel` | None. Use when the user asks to stop active generation. |
+| `film-download` | `filmId` from `result.id` and an unused absolute `.html` `destination` in an existing directory. |
+
+1. Call `film-status` to find an existing player or inspect the source branch before starting. For new generation, use `film-start`. Pass `installNarration: true` only when the user authorizes the local narration model download. Research explanation also requires Chrome, Chromium, or Edge on the service machine for headless review.
+2. Poll `film-status` after start or revision. Read `progress.phase`, `error`, `preflightError`, and `reviewFailure`. A reply can include an older `result` during a newer attempt. For a newly requested film, wait for the new published result before reporting success. If a request times out, check the same branch and mode before issuing another start, revision, or cancellation.
+3. On `reviewFailure`, discuss the findings with the user and pass their feedback with the current `attemptId` to `film-revise`. If a revision conflicts, read status again to identify the current failure. For a resumable interruption, use `film-start` with `resume: true` when `canResume` is true. For Research explanation, `advisoryNarrationReview: true` makes the narration score advisory when explicitly requested and retains other checks. Revision and resume can inherit the attempt's review policy.
+4. Download the chosen published player with `film-download`. The runner publishes only the completed file and preserves existing destinations.
+
+```json
+{"action":"film-status","projectId":"<project-id>","sessionId":"<session-id>","mode":"research-explanation"}
+```
+
+```json
+{"action":"film-download","projectId":"<project-id>","sessionId":"<session-id>","mode":"research-explanation","branchId":"<returned-branch-id>","filmId":"<result-id>","destination":"C:/path/to/research-film.html"}
+```
+
 ## Retry a missing submission
 
 When the user requests a retry, look up the original request with `submission` on its bound instance. If the CLI returns `submission_not_found`, the local task receipt has no known Run ID, and you still have the exact original request, resend that `submit` with `retryIfMissing: true`. Keep the original `requestId` and the complete `run` object, including the same project, Session, prompt, and options.

@@ -142,3 +142,7 @@ Keep the shared configuration and receipts when removing one adapter.
 - When a pending approval or question needs human action, use the session ID from the runner to find it in Open Science.
 
 See the runner reference for request examples and recovery. Run `npm test` for regression checks. [Runner reference](skills/open-science/references/runner.md) · [CLI migration](docs/cli-migration.md) · [Official CLI guide](https://github.com/aipoch/open-science/blob/v1.3.0/packages/open-science/CLI.md)
+
+## Research Films
+
+Ask any supported host to create, revise, or export a Research Film from a completed Open Science conversation. The skill can generate a Research explanation or Operation replay and save the published film as a self-contained HTML player with narration. Film actions require an Open Science build that provides the `film` commands and a matching service with Research Film support. [Research Film workflow](skills/open-science/references/runner.md#research-films)

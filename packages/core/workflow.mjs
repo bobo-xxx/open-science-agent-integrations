@@ -178,6 +178,7 @@ export async function operate(configuration, request, { instanceId, signal } = {
     const { client } = await connect({
       configuration, instanceId: target.instanceId, expectedBinding: target.binding, signal
     })
+    if (request.action.startsWith('film-')) await client.requireResearchFilm()
     const options = { signal }
     let result
     if (request.action === 'submission') {

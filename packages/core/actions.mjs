@@ -1,5 +1,6 @@
-import { chmod, link, mkdtemp, rm } from 'node:fs/promises'
-import { dirname, isAbsolute, join, parse } from 'node:path'
+import { chmod, link, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, extname, isAbsolute, join, parse } from 'node:path'
 
 const downloadTimeoutMs = 310_000
 
@@ -119,6 +120,14 @@ function validateRun(run) {
   }
 }
 
+const filmScopeFields = ['projectId', 'sessionId', 'branchId', 'mode']
+const filmModes = ['research-explanation', 'operation-replay']
+const filmFlags = {
+  installNarration: '--install-narration',
+  resume: '--resume',
+  advisoryNarrationReview: '--advisory-narration-review'
+}
+
 const actions = {
   instances: [],
   receipts: ['instanceId', 'projectId', 'sessionId', 'runId', 'limit'],
@@ -141,7 +150,33 @@ const actions = {
   plan: ['sessionId'],
   'respond-plan': ['sessionId', 'response'],
   artifacts: ['sessionId'],
-  download: ['artifactId', 'destination']
+  download: ['artifactId', 'destination'],
+  'film-start': [...filmScopeFields, ...Object.keys(filmFlags)],
+  'film-status': filmScopeFields,
+  'film-revise': [...filmScopeFields, 'attemptId', 'feedback', 'advisoryNarrationReview'],
+  'film-cancel': filmScopeFields,
+  'film-download': [...filmScopeFields, 'filmId', 'destination']
+}
+
+function validateFilm(request) {
+  if (!filmModes.includes(request.mode)) {
+    throw inputError(`mode must be one of: ${filmModes.join(', ')}.`)
+  }
+  for (const field of Object.keys(filmFlags)) {
+    if (request[field] !== undefined && typeof request[field] !== 'boolean') {
+      throw inputError(`${field} must be a boolean.`)
+    }
+  }
+  if (request.advisoryNarrationReview && request.mode !== 'research-explanation') {
+    throw inputError('Advisory narration review applies only to Research explanation.')
+  }
+  if (request.action === 'film-revise') string(request.feedback, 'feedback')
+  if (request.action === 'film-download') {
+    const destination = absolute(request.destination, 'destination')
+    if (extname(destination).toLowerCase() !== '.html') {
+      throw inputError('The Research Film destination must have a .html extension.')
+    }
+  }
 }
 
 export function validateRequest(request) {
@@ -153,7 +188,7 @@ export function validateRequest(request) {
     throw unsupportedOperation('Use a task receipt or supply a Session ID from Open Science. The CLI supports Session lookup by ID.')
   }
   for (const field of actions[action].filter((field) => field.endsWith('Id'))) {
-    if (action === 'receipts' && request[field] === undefined) continue
+    if (request[field] === undefined && (action === 'receipts' || field === 'branchId')) continue
     const value = string(request[field], field)
     if (field !== 'requestId' && action !== 'receipts') positional(value, field)
   }
@@ -182,6 +217,7 @@ export function validateRequest(request) {
     throw inputError(`framework and expectedFramework must be one of: ${frameworkIds.join(', ')}.`)
   }
   if (action === 'download') absolute(request.destination, 'destination')
+  if (action.startsWith('film-')) validateFilm(request)
   if (action === 'respond-plan') {
     const response = object(request.response, 'response')
     if (Object.hasOwn(response, 'feedback')) {
@@ -201,20 +237,55 @@ export function validateRequest(request) {
   return request
 }
 
-async function download(client, { artifactId, destination }, options) {
+async function publishDownload(client, args, { destination, stagedName, signal }) {
   // Publish only a complete file and leave an existing destination intact.
   const staging = await mkdtemp(join(dirname(destination), '.open-science-download-'))
-  const temporary = join(staging, 'artifact')
+  const temporary = join(staging, stagedName)
   try {
-    await client(['artifacts', 'download', artifactId, '--output', temporary], {
-      ...options, timeoutMs: downloadTimeoutMs
+    await client([...args, '--output', temporary], {
+      signal, timeoutMs: downloadTimeoutMs
     })
     if (process.platform !== 'win32') await chmod(temporary, 0o600)
     await link(temporary, destination)
-    return { artifactId, destination }
   } finally {
     await rm(staging, { recursive: true, force: true }).catch(() => {})
   }
+}
+
+async function download(client, { artifactId, destination }, options) {
+  await publishDownload(client, ['artifacts', 'download', artifactId], {
+    ...options, destination, stagedName: 'artifact'
+  })
+  return { artifactId, destination }
+}
+
+async function reviseFilm(client, args, { attemptId, feedback }, options) {
+  const staging = await mkdtemp(join(tmpdir(), 'open-science-film-feedback-'))
+  const file = join(staging, 'feedback.txt')
+  try {
+    await writeFile(file, feedback, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
+    return await client([...args, '--attempt-id', attemptId, '--feedback-file', file], options)
+  } finally {
+    await rm(staging, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+async function filmOperation(client, request, options) {
+  const { action, projectId, sessionId, branchId, mode } = request
+  const args = ['film', action.slice('film-'.length), sessionId, '--project', projectId, '--mode', mode]
+  if (branchId !== undefined) args.push('--branch', branchId)
+  for (const [field, flag] of Object.entries(filmFlags)) {
+    if (request[field] === true) args.push(flag)
+  }
+  if (action === 'film-revise') return reviseFilm(client, args, request, options)
+  if (action === 'film-download') {
+    const { filmId, destination } = request
+    await publishDownload(client, [...args, '--film-id', filmId], {
+      ...options, destination, stagedName: 'film.html'
+    })
+    return { filmId, destination }
+  }
+  return client(args, options)
 }
 
 async function switchAgent(client, { framework, expectedFramework }, options) {
@@ -314,6 +385,11 @@ export async function execute(client, request, { signal } = {}) {
     }
     case 'artifacts': return client(['artifacts', 'list', sessionId], options)
     case 'download': return download(client, request, options)
+    case 'film-start':
+    case 'film-status':
+    case 'film-revise':
+    case 'film-cancel':
+    case 'film-download': return filmOperation(client, request, options)
     default: throw inputError(`Unknown action: ${action}.`)
   }
 }

@@ -39,6 +39,19 @@ async function fixture(t, settings = {}) {
       await appendFile(${JSON.stringify(commandsPath)}, JSON.stringify({ args, stdin }) + '\\n')
       if (args[0] === '--version') {
         console.log(settings.cliVersion ?? '1.3.0')
+      } else if (args[0] === 'help' && args[1] === 'film') {
+        if (settings.filmHelp === 'unsupported') {
+          console.error('Unknown command: film')
+          process.exitCode = 2
+        } else if (settings.filmHelp === 'structured-unsupported') {
+          console.error(JSON.stringify({ error: { code: 'invalid_cli_usage', message: 'Unknown command: film' } }))
+          process.exitCode = 2
+        } else if (settings.filmHelp === 'unexpected-error') {
+          console.error(JSON.stringify({ error: { code: 'sample_error', message: 'Original CLI message' } }))
+          process.exitCode = 2
+        } else {
+          console.log('Usage: open-science film <subcommand> [options]')
+        }
       } else if (args[0] === 'status') {
         const configRoot = args[args.indexOf('--config-root') + 1]
         if (configRoot.includes('offline profile')) {
@@ -114,6 +127,35 @@ test('rejects stale CLI commands and service version mismatches', async t => {
 
   const mismatch = await fixture(t, { appVersion: '1.3.1' })
   await assert.rejects(connect({ configPath: mismatch.configPath }), { code: 'cli_version_mismatch' })
+})
+
+test('checks Research Film availability on the selected CLI without a version assumption', async t => {
+  const supported = await fixture(t)
+  const { client } = await connect({ configPath: supported.configPath })
+  assert.equal(client.version, '1.3.0')
+  await client.requireResearchFilm()
+  assert.deepEqual((await supported.calls()).map(call => call.args), [
+    ['--version'], ['status', '--config-root', supported.configRoot, '--json'], ['help', 'film']
+  ])
+
+  for (const filmHelp of ['unsupported', 'structured-unsupported']) {
+    const legacy = await fixture(t, { filmHelp })
+    const { client } = await connect({ configPath: legacy.configPath })
+    assert.equal(client.version, '1.3.0')
+    await assert.rejects(client.requireResearchFilm(), { code: 'unsupported_operation' })
+    assert.deepEqual((await legacy.calls()).at(-1).args, ['help', 'film'])
+    assert.deepEqual((await client(['project', 'list'])).args, [
+      'project', 'list', '--config-root', legacy.configRoot, '--json'
+    ])
+  }
+})
+
+test('preserves unrelated structured errors from the Research Film help probe', async t => {
+  const { configPath } = await fixture(t, { filmHelp: 'unexpected-error' })
+  const { client } = await connect({ configPath })
+  await assert.rejects(client.requireResearchFilm(), {
+    code: 'sample_error', message: 'Original CLI message', exitCode: 2
+  })
 })
 
 test('rejects a CLI status that resolves to another profile', async t => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { execute, validateRequest } from '../packages/core/actions.mjs'
 
@@ -97,6 +97,116 @@ test('publishes complete downloads and preserves existing destinations and faile
   }
   await assert.rejects(execute(brokenClient, { ...request, destination: join(directory, 'partial.txt') }), /broken/)
   assert.deepEqual((await readdir(directory)).sort(), ['new.txt', 'report.txt'])
+})
+
+test('passes Film scope and opt-in flags while returning the service state unchanged', async () => {
+  const scope = { projectId: 'project-id', sessionId: 'session-id', mode: 'research-explanation' }
+  const scopedArgs = ['session-id', '--project', 'project-id', '--mode', 'research-explanation']
+  const state = {
+    branchId: 'branch-id', progress: { phase: 'writing' }, result: { id: 'existing-published-film' }
+  }
+
+  for (const [fields, expected] of [
+    [{ action: 'film-start', installNarration: false, resume: false, advisoryNarrationReview: false },
+      ['film', 'start', ...scopedArgs]],
+    [{ action: 'film-start', installNarration: true, resume: true, advisoryNarrationReview: true },
+      ['film', 'start', ...scopedArgs, '--install-narration', '--resume', '--advisory-narration-review']],
+    [{ action: 'film-status', branchId: 'branch-id' },
+      ['film', 'status', ...scopedArgs, '--branch', 'branch-id']],
+    [{ action: 'film-cancel', branchId: 'branch-id', mode: 'operation-replay' },
+      ['film', 'cancel', 'session-id', '--project', 'project-id', '--mode', 'operation-replay',
+        '--branch', 'branch-id']]
+  ]) {
+    const client = async args => {
+      assert.deepEqual(args, expected)
+      return state
+    }
+    assert.equal(await execute(client, validateRequest({ ...scope, ...fields })), state)
+  }
+})
+
+test('passes Film revision feedback in a private UTF-8 file and removes it even on failure', async () => {
+  const feedback = '--改进图表\nSimplify the labels and spacing.'
+  const request = validateRequest({
+    action: 'film-revise', projectId: 'project-id', sessionId: 'session-id', branchId: 'branch-id',
+    mode: 'research-explanation', attemptId: 'attempt-id', feedback, advisoryNarrationReview: true
+  })
+  const state = { branchId: 'branch-id', progress: { phase: 'writing' } }
+  const conflict = Object.assign(new Error('Review attempt changed.'), { code: 'film_review_conflict' })
+  for (const failure of [undefined, conflict]) {
+    let file
+    const client = async args => {
+      assert.deepEqual(args.slice(0, -1), [
+        'film', 'revise', 'session-id', '--project', 'project-id', '--mode', 'research-explanation',
+        '--branch', 'branch-id', '--advisory-narration-review', '--attempt-id', 'attempt-id', '--feedback-file'
+      ])
+      file = args.at(-1)
+      assert.equal(await readFile(file, 'utf8'), feedback)
+      if (process.platform !== 'win32') assert.equal((await stat(file)).mode & 0o777, 0o600)
+      if (failure) throw failure
+      return state
+    }
+    if (failure) await assert.rejects(execute(client, request), failure)
+    else assert.equal(await execute(client, request), state)
+    assert.ok(file)
+    await assert.rejects(stat(dirname(file)), { code: 'ENOENT' })
+  }
+})
+
+test('publishes a complete Film HTML download without overwriting an existing destination', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'open-science-film-test-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const destination = join(directory, '研究影片.HTML')
+  const content = Buffer.from('<!doctype html><title>研究影片</title>')
+  let downloadBytes = content
+  const request = validateRequest({
+    action: 'film-download', projectId: 'project-id', sessionId: 'session-id', branchId: 'branch-id',
+    mode: 'operation-replay', filmId: 'film-id', destination
+  })
+  const client = async (args, options) => {
+    assert.deepEqual(args.slice(0, -1), [
+      'film', 'download', 'session-id', '--project', 'project-id', '--mode', 'operation-replay',
+      '--branch', 'branch-id', '--film-id', 'film-id', '--output'
+    ])
+    assert.equal(options.timeoutMs, 310_000)
+    const file = args.at(-1)
+    assert.equal(basename(file), 'film.html')
+    assert.notEqual(file, destination)
+    await writeFile(file, downloadBytes, { mode: 0o644 })
+  }
+  assert.deepEqual(await execute(client, request), { filmId: 'film-id', destination })
+  assert.deepEqual(await readFile(destination), content)
+  if (process.platform !== 'win32') assert.equal((await stat(destination)).mode & 0o777, 0o600)
+
+  downloadBytes = Buffer.from('<!doctype html><title>Replacement</title>')
+  await assert.rejects(execute(client, request), { code: 'EEXIST' })
+  assert.deepEqual(await readFile(destination), content)
+  await assert.rejects(execute(async args => {
+    await writeFile(args.at(-1), 'partial')
+    throw Object.assign(new Error('Film missing.'), { code: 'film_not_found' })
+  }, { ...request, destination: join(directory, 'partial.html') }), { code: 'film_not_found' })
+  assert.deepEqual(await readdir(directory), [basename(destination)])
+})
+
+test('validates the Film action-specific parameters before dispatch', () => {
+  const scope = { projectId: 'project-id', sessionId: 'session-id', mode: 'research-explanation' }
+  for (const request of [
+    { action: 'film-status', projectId: undefined },
+    { action: 'film-status', sessionId: '-flag' },
+    { action: 'film-status', branchId: '' },
+    { action: 'film-status', mode: 'invalid' },
+    { action: 'film-status', installNarration: true },
+    { action: 'film-start', installNarration: 'true' },
+    { action: 'film-start', resume: null },
+    { action: 'film-start', advisoryNarrationReview: true, mode: 'operation-replay' },
+    { action: 'film-revise', attemptId: 'attempt-id', feedback: ' \n' },
+    { action: 'film-revise', feedback: 'Feedback' },
+    { action: 'film-download', filmId: 'film-id', destination: 'relative.html' },
+    { action: 'film-download', filmId: 'film-id', destination: join(tmpdir(), 'unsupported.mp4') },
+    { action: 'film-download', destination: join(tmpdir(), 'missing-id.html') }
+  ]) {
+    assert.throws(() => validateRequest({ ...scope, ...request }), { code: 'invalid_input' })
+  }
 })
 
 test('passes explicit run options to the CLI and sends Unicode prompts on stdin', async () => {

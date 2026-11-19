@@ -1,50 +1,50 @@
-# 首版验收范围
+# First Release Acceptance Scope
 
-## 已确认
+## Requirements
 
-- 在用户自己的 Windows 环境验收。
-- 在 Codex、Claude Code、WorkBuddy 分别验证同一条端到端流程：选择项目，新建或继续会话，提交任务，断线后恢复查询，读取回复和产物。
-- 遇到需人工处理的请求时，说明哪个会话在等待什么。
-- 接入适配由本仓库维护。SDK 功能补齐由另一个会话在 Open Science fork 中推进。
-- 三个宿主首选技能指引和共享 Node 脚本，通过公开 SDK 执行操作。宿主限制需要实测，再决定是否增加其他接入方式。
-- 首次配置选定默认目标实例。用户可以显式切换，离线时提示原因，禁止自动改连其他实例。
-- 在本地保存任务回执，关闭原聊天后仍可通过目标实例、请求 ID 和 Run ID 恢复查询。
-- 支持自然语言触发和显式调用。宿主优先使用 SDK；缺少所需能力时，说明具体缺口，由用户决定是否改用界面操作。
-- 每个实例可单独启用自动启动。只启动选定实例，最多等待 60 秒，并保留宿主的前台焦点。若启动器无法保留焦点，提示手动启动。
-- 三个宿主共用本地任务回执。只保存实例标识、任务相关 ID 和时间。匹配不唯一时由用户选定；提交结果不明时先查询原回执。
-- 在 Windows 上配置一次目标实例。Codex、Claude Code、WorkBuddy 分别安装、升级和卸载各自的适配。共享实例配置与任务回执独立于宿主安装目录，卸载单个适配后仍可由其他宿主使用。
-- 首版包含从外部宿主切换目标实例的内部智能体，并验证切换后的任务确实使用所选框架。
+- Run acceptance tests on the user's Windows machine.
+- Verify the same end-to-end flow in Codex, Claude Code, and WorkBuddy. Select a project, start or continue a session, submit a task, recover its status after a disconnect, and retrieve the response and artifacts.
+- For requests that need human attention, identify the waiting session and what it needs.
+- Maintain the host adapters in this repository. SDK work takes place separately in an Open Science fork.
+- Each host uses the shared skill and Node runner to operate through the public SDK. Test host limitations before adding other integration methods.
+- Select a default target instance during initial setup. Users can explicitly select a different instance. If the selected instance is offline, report why and keep that selection.
+- Store task receipts locally so users can recover a task after closing the original chat using the target instance, request ID, and Run ID.
+- Support both natural-language activation and explicit invocation. The host uses the SDK first. If the SDK lacks the required capability, report the specific gap and let the user decide whether to use the app interface.
+- Allow users to enable automatic launch per instance. Launch only the selected instance, wait up to 60 seconds, and preserve foreground focus on the host. Provide manual launch instructions if the launcher cannot preserve focus.
+- Share local task receipts across all three hosts. Store only the instance identifier, task IDs, and timestamps. Let the user choose when multiple receipts match. If the submission outcome is unclear, query the original receipt first.
+- Configure the target instance once on Windows. Install, upgrade, and uninstall each host's adapter separately. Keep the shared instance configuration and task receipts outside the adapter installation directories so the other hosts can use them after an adapter is uninstalled.
+- Include switching the internal agent of a target instance from an external host. Verify that a task submitted after the switch uses the selected framework.
 
-## 实施方案
+## Implementation Plan
 
-1. **实例配置。** 增加统一的本机配置入口，保存目标名称、对应 SDK、配置目录、默认目标和每个目标的启动选项。各宿主读取同一份配置。临时指定实例只影响当前操作。回执绑定原目标，默认实例变化时仍到原目标查找；目标绑定失效时提示修复。
-2. **跨宿主恢复。** 提交前持久保存请求 ID，获得 Run ID 后补记。提供查询与恢复入口，在原聊天关闭、宿主切换或响应丢失后按原请求查状态。回执索引只保存定位信息，不保留提示词、凭据、研究结果或产物。
-3. **启动与交互。** 用现有 SDK 做连接与能力检查。仅在已选实例离线、启用自动启动且其启动器已验证可保留焦点时启动。其他情况给出手动启动办法。向用户报告需要人工处理的会话及可见状态。
-4. **分发与维护。** 复用当前共享技能、runner 和三套打包草稿。提供本地安装、升级及卸载说明，检查构建与安装包内容。每个宿主的安装测试均使用对应宿主实际支持的入口。
-5. **内部智能体切换。** 外部宿主可查询当前框架和各运行时的就绪情况。用户明确要求切换时，通过 SDK 修改选定实例的框架并回读确认。常规任务沿用现有设置。
+1. **Instance configuration.** Use a single local configuration file for target names, SDK paths, configuration directories, the default target, and per-target launch options. All hosts read this file. Selecting an instance for a call applies only to that call. Receipts stay bound to their original target when the default changes. If the target binding breaks, report how to fix it.
+2. **Cross-host recovery.** Persist the request ID before submission and record the Run ID when it becomes available. Allow users to look up and recover the original request after closing a chat, switching hosts, or losing a submission response. The receipt index stores only lookup metadata. Prompts, credentials, research results, and artifacts stay out of the index.
+3. **Launch and interaction.** Use the existing SDK to check connectivity and capabilities. Launch the selected instance only if it is offline, automatic launch is enabled, and its launcher has been verified to preserve foreground focus. Otherwise, provide manual launch instructions. Report sessions that need human attention and their visible status.
+4. **Distribution and maintenance.** Reuse the shared skill, runner, and package templates for all three hosts. Document local installation, upgrades, and removal. Verify each build and its contents. Test installation through an entry point the host supports.
+5. **Internal agent switching.** External hosts can query the current framework and runtime readiness. When a user explicitly requests a switch, update the selected instance through the SDK and read the setting back. Routine tasks use the current settings.
 
-## WorkBuddy 验收前置
+## WorkBuddy Acceptance Prerequisites
 
-本机当前运行 WorkBuddy 5.11.3，程序路径为 `D:\Programs\WorkBuddy-CN\WorkBuddy.exe`。已在 **Installed skills** 确认「Open Science 科研工作台」已安装。宿主任务验收验证它能否在本机启动 Node、加载目标环境的 SDK、提交并读取任务和产物。[技能格式](https://open.workbuddy.cn/en/docs/skill) · [权限与沙箱](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Permission-Modes)
+The test machine ran WorkBuddy 5.11.3 from `D:\Programs\WorkBuddy-CN\WorkBuddy.exe`. The Open Science skill appeared under **Installed skills**. The host acceptance test checked whether WorkBuddy could launch Node locally, load the target instance's SDK, submit a task, and retrieve its result and artifacts. [Skill format](https://open.workbuddy.cn/en/docs/skill) · [Permissions and sandboxing](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Permission-Modes)
 
-## 验收步骤
+## Acceptance Steps
 
-1. 用隔离开发版测试配置、实例切换、版本能力检查、离线提示及启动焦点。普通权限等待时检查宿主能指出会话和待处理状态。
-2. 在各宿主安装对应包，分别验证自然语言、显式技能入口，以及真实任务能提交、续跑、返回回复并取得产物。常规回归沿用已配置并就绪的内部智能体。
-3. 在一个宿主提交任务后关闭原聊天。新聊天和另一宿主都能用本地回执查询同一 Run；模拟丢失提交响应并验证任务没有重复下发。
-4. 验证单个适配升级、卸载后其他宿主仍可读取共享配置与回执。
-5. 单独验收智能体切换。在一个外部宿主中操作隔离开发版，记录原框架，再切到另一个已配置并就绪的框架。回读设置，提交一条新会话短任务，核对实际使用的框架和回复。测试结束后恢复原框架并回读确认。
+1. Use the isolated development build to test configuration, instance selection, version and capability checks, offline messages, and launch focus behavior. Verify that the host identifies the session and pending action when an approval is required.
+2. Install each host's package. Verify natural-language activation, explicit skill invocation, and the ability to submit a real task, continue it, and retrieve its response and artifacts. Use the configured, ready internal agent for routine regression tests.
+3. Submit a task from one host, then close the original chat. Verify that a new chat and another host can both find the same Run from its local receipt. Simulate a lost submission response and verify that the task is submitted only once.
+4. Upgrade and uninstall an individual adapter. Verify that other hosts can still read the shared configuration and receipts.
+5. Test agent switching separately. From an external host, record the current framework of the isolated development instance. Switch to another configured, ready framework and read back the setting. Submit a short task in a new session and verify the framework used and the response. Restore the original framework and read back the setting.
 
-截至 2026-11-18，隔离开发版的默认模型为 `deepseek-flash`。连接测试通过，SDK `doctor` 返回 `ready: true`，当前 Claude Code 和模型提供商均已就绪。
+On November 18, 2026, the isolated development build used `deepseek-flash` as its default model. The connection check passed. The SDK's `doctor` action returned `ready: true`, and Claude Code and the model provider were both ready.
 
-## 本机验收记录
+## Local Acceptance Results
 
-- 0.2.0 的三套适配包已构建。24 项回归测试通过，涵盖实例绑定、并发启动、提交回执、并发切换和打包。
-- Codex 与 Claude Code 的本机临时配置测试通过。两者均验证安装、升级、技能发现、SDK 健康检查和卸载。卸载后其他包仍可读取同一条临时回执。
-- 使用官方 SDK 和受控本机服务测试了三套 runner。模拟提交响应丢失后可跨包找回任务，提交计数为一次。产物下载、框架写入和回读均通过。
-- WorkBuddy 5.11.3 的真实任务闭环通过。宿主显示「Open Science 科研工作台」，用户选用 DeepSeek Flash 提交任务。首次提交在创建 Run 前因 DEV 绑定的 `claude.cmd` 丢失而失败。从现有 Claude Code 2.1.327 安装重建启动入口后，用户使用新的请求 ID 复测，WorkBuddy 返回完成状态和 `native-workbuddy-flash.txt`。DEV 会话有效模型为 `deepseek-flash`。Codex 从共享回执恢复同一 Run 并通过 SDK 下载产物，内容与预期一致。
-- Codex 的常规真实任务通过。当前 Codex 使用打包技能在 DEV 提交了一个专用测试会话，内部框架为 Claude Code，会话模型为 `deepseek-flash`。另一套打包 runner 从共享回执恢复 Run，续跑后通过 SDK 下载产物并核对内容。
-- 外部 Claude Code 的真实宿主任务闭环通过。将 Claude Code 专用代理配置改为 HTTP 后，Claude Code 2.1.327 使用 `deepseek-flash[1m]` 调用打包技能提交真实测试任务。一个新的 CLI 会话使用同一回执恢复到原 Run、读取完成结果、下载产物，文件内容核对通过。DEV 执行会话的有效模型为 `deepseek-flash`。[Claude Code 官方代理配置](https://code.claude.com/docs/en/network-config#proxy-configuration)
-- 智能体切换专项通过。切到 Open Science Agent 后，一条短任务使用 `deepseek-flash` 完成，服务端用量记录与会话配置一致。首次尝试在任务准备结束前恢复框架，回执记录为准备失败。重试完成后恢复 Claude Code，确认默认模型仍为 `deepseek-flash` 且 `doctor` 返回 `ready: true`。
-- 0.2.0 已安装并启用在实际使用的 Codex 和 Claude Code 用户配置中。新启动的 Codex 实例可发现 `open-science:open-science`，Claude Code 原生插件详情确认有 `open-science` 技能。两个宿主安装目录内的 runner 默认连接 DEV，并成功恢复了 WorkBuddy 验收时创建的同一条回执。
-- 当前两个目标都保持手动启动，DEV 的桌面启动器尚未验证可保留前台焦点。
+- All three 0.2.0 adapter packages built successfully. All 24 regression tests passed, covering instance binding, concurrent startup, submission receipts, concurrent agent switching, and packaging.
+- Codex and Claude Code passed tests with temporary local configurations. These covered installation, upgrades, skill discovery, SDK health checks, and removal. After an adapter was removed, the other packages could still read the same temporary receipt.
+- All three runners were tested with the official SDK and a controlled local service. After a simulated lost submission response, another package recovered the task and the submission count was one. Artifact downloads, framework updates, and read-back checks passed.
+- WorkBuddy 5.11.3 passed the live task test. WorkBuddy showed the Open Science skill and submitted a task using DeepSeek Flash. The first submission failed before creating a Run because the `claude.cmd` launcher configured for DEV was missing. After rebuilding the launcher from the existing Claude Code 2.1.327 installation, a retry with a new request ID returned a completed status and `native-workbuddy-flash.txt`. The effective model in the DEV session was `deepseek-flash`. Codex recovered the same Run from the shared receipt and used the SDK to download and verify the artifact.
+- Codex passed the routine live task test. Codex used the packaged skill to submit a task in a dedicated DEV test session. The internal framework was Claude Code and the session model was `deepseek-flash`. Another packaged runner recovered the Run from the shared receipt, then used the SDK to download and verify the artifact after the task continued.
+- External Claude Code passed the live host test. After switching its proxy configuration to HTTP, Claude Code 2.1.327 used `deepseek-flash[1m]` and the packaged skill to submit a real test task. A new CLI session used the same receipt to recover the original Run, read the completed result, and download and verify the artifact. The effective model in the DEV session was `deepseek-flash`. [Claude Code proxy configuration](https://code.claude.com/docs/en/network-config#proxy-configuration)
+- The dedicated agent switching test passed. After switching to Open Science Agent, a short task completed using `deepseek-flash`. Server usage records matched the session configuration. During the first attempt, the framework was restored before task preparation finished and the receipt recorded a preparation failure. After a successful retry, Claude Code was restored, the default model remained `deepseek-flash`, and `doctor` returned `ready: true`.
+- Version 0.2.0 was installed and enabled in the active Codex and Claude Code user configurations. A new Codex instance discovered `open-science:open-science`, and the Claude Code plugin details showed the `open-science` skill. The installed runners in both hosts defaulted to DEV and recovered the same receipt from the WorkBuddy acceptance test.
+- Both targets use manual launch. Foreground focus preservation still needs to be verified for the DEV desktop launcher.

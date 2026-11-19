@@ -1,25 +1,25 @@
-# Open Science 接入适配
+# Open Science Agent Integrations
 
-本项目为外部宿主提供使用 Open Science 的入口。Open Science SDK 的功能补齐由独立工作线负责。
+This project connects external hosts to Open Science. Work to expand the Open Science SDK takes place separately.
 
-## 术语
+## Terms
 
-**外部宿主**
+**External host**
 
-用户提出操作请求的应用，例如 Codex、Claude Code 或 WorkBuddy。
+The application where a user requests an operation, such as Codex, Claude Code, or WorkBuddy.
 
-**Open Science 智能体**
+**Open Science agent**
 
-Open Science 内部接受并执行科研任务的智能体。
+An agent inside Open Science that accepts and executes research tasks.
 
-**目标实例**
+**Target instance**
 
-外部宿主此次操作的 Open Science 环境，例如正常安装版或隔离开发版。它使用自己的配置与数据。
+The Open Science environment that an external host is operating on, such as a standard installation or an isolated development build. Each instance has its own configuration and data.
 
-**宿主适配**
+**Host adapter**
 
-让一种外部宿主发现并使用 Open Science 能力的接入包。
+A package that lets an external host discover and use Open Science capabilities.
 
-**任务回执**
+**Task receipt**
 
-标识一次 Open Science 任务提交的本地记录。它包含目标实例、请求 ID、已知的 Run ID 和时间，用于从另一个聊天或外部宿主找回任务。
+A local record of an Open Science task submission. It contains the target instance, request ID, Run ID when known, and timestamps, so the task can be recovered from another chat or external host.

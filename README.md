@@ -4,7 +4,7 @@ Use Codex, Claude Code, or WorkBuddy to submit research tasks to Open Science, r
 
 ## Ask your agent to install
 
-Send the prompt for your host in a local session on the computer running Open Science. The agent needs terminal and file access on that computer.
+Send the prompt for your host in a session with terminal and file access on the computer running Open Science. GitHub provides the source. The agent builds the adapter and connects it to the SDK and service on that computer.
 
 ### Codex
 
@@ -20,6 +20,8 @@ Send the prompt for your host in a local session on the computer running Open Sc
 
 ## Shared setup
 
+Resolve repository paths from the checkout and expand `~` to the current user's home directory.
+
 1. Check for Node.js 22.13 or newer and an Open Science installation with the SDK on this computer.
 2. Clone the repository and build the adapters. Reuse an existing checkout if appropriate and preserve its local changes.
 
@@ -29,13 +31,13 @@ Send the prompt for your host in a local session on the computer running Open Sc
    npm run build
    ```
 
-3. Check `~/.open-science-agent-integrations/config.json` for the intended instance. If setup is needed, locate the SDK and the instance's profile directory. Ask which instance to use if several are available and the user has not chosen one.
+3. Check the configuration selected by `OPEN_SCIENCE_INTEGRATIONS_CONFIG`, or `~/.open-science-agent-integrations/config.json` by default, for the intended instance. If setup is needed, locate the SDK and profile on the user's computer. Ask which instance to use if several are available and the user has not chosen one.
 
    - For an installed app, use `resources/packages/open-science/index.mjs` under the installation directory.
    - For a development checkout, use `packages/open-science/index.mjs` under that checkout.
    - Use the directory containing the instance's `web-service.json` as `configRoot`. Keep installed and development instances on separate profiles.
 
-4. When creating a configuration, copy the example to a local file. Set absolute `sdkPath` and `configRoot` values for each instance and set `defaultInstance` to one of their IDs. Run `npm run configure -- <prepared-config.json>` with that file. The command preserves an existing configuration. Edit that configuration directly for a requested update. [Windows configuration example](examples/config.windows.json)
+4. When creating a configuration, copy the example and replace its placeholders with the absolute `sdkPath` and `configRoot` resolved on this computer. Set `defaultInstance` to one of the configured IDs. Run `npm run configure -- <prepared-config.json>` with that file. The command preserves an existing configuration. Edit that configuration directly for a requested update. [Windows configuration example](examples/config.windows.json)
 
 ## Host install steps
 
@@ -59,7 +61,11 @@ claude plugin marketplace add (Resolve-Path 'dist/claude-code').Path
 claude plugin install open-science@open-science-integrations-local
 ```
 
-In a new Claude Code session, invoke `/open-science:open-science` and ask it to list projects. For a single session, launch `claude --plugin-dir <absolute-path-to-dist/claude-code/plugins/open-science>` instead.
+In a new Claude Code session, invoke `/open-science:open-science` and ask it to list projects. To load the plugin for a single session, run this from the repository root in PowerShell.
+
+```powershell
+claude --plugin-dir (Resolve-Path 'dist/claude-code/plugins/open-science').Path
+```
 
 ### Install in WorkBuddy
 

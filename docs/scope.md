@@ -25,7 +25,7 @@
 
 ## WorkBuddy Acceptance Prerequisites
 
-The test machine ran WorkBuddy 5.11.3 from `D:\Programs\WorkBuddy-CN\WorkBuddy.exe`. The Open Science skill appeared under **Installed skills**. The host acceptance test checked whether WorkBuddy could launch Node locally, load the target instance's SDK, submit a task, and retrieve its result and artifacts. [Skill format](https://open.workbuddy.cn/en/docs/skill) · [Permissions and sandboxing](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Permission-Modes)
+The test machine ran WorkBuddy 5.11.3 on Windows. The Open Science skill appeared under **Installed skills**. The host acceptance test checked whether WorkBuddy could launch Node locally, load the target instance's SDK, submit a task, and retrieve its result and artifacts. [Skill format](https://open.workbuddy.cn/en/docs/skill) · [Permissions and sandboxing](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Permission-Modes)
 
 ## Acceptance Steps
 

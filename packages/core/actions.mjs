@@ -1,4 +1,4 @@
-import { link, mkdtemp, rm } from 'node:fs/promises'
+import { chmod, link, mkdtemp, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, parse } from 'node:path'
 
 const downloadTimeoutMs = 310_000
@@ -209,6 +209,7 @@ async function download(client, { artifactId, destination }, options) {
     await client(['artifacts', 'download', artifactId, '--output', temporary], {
       ...options, timeoutMs: downloadTimeoutMs
     })
+    if (process.platform !== 'win32') await chmod(temporary, 0o600)
     await link(temporary, destination)
     return { artifactId, destination }
   } finally {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -53,13 +53,34 @@ test('bounded waiting returns Plan attention and never cancels the run', async (
   assert.deepEqual(await execute(client, validateRequest({ action: 'wait', runId: run.id, timeoutMs: 500 })), run)
 })
 
+test('a bounded wait can be followed by Run and Session lookups for ordinary human attention', async () => {
+  const run = { id: 'run-1', sessionId: 'session-1', status: 'running' }
+  for (const status of ['waiting-permission', 'waiting-for-user']) {
+    const session = { id: run.sessionId, status }
+    const calls = []
+    const client = async args => {
+      calls.push(args)
+      if (args[1] === 'wait') throw Object.assign(new Error('Wait timed out.'), { code: 'timeout' })
+      return args[0] === 'run' ? run : session
+    }
+    await assert.rejects(execute(client, { action: 'wait', runId: run.id, timeoutMs: 500 }), { code: 'timeout' })
+    const active = await execute(client, { action: 'run', runId: run.id })
+    assert.deepEqual(active, run)
+    assert.deepEqual(await execute(client, { action: 'session', sessionId: active.sessionId }), session)
+    assert.deepEqual(calls, [
+      ['run', 'wait', run.id, '--timeout-ms', '500', '--return-on-attention'],
+      ['run', 'status', run.id], ['session', 'status', run.sessionId]
+    ])
+  }
+})
+
 test('publishes complete downloads and preserves existing destinations and failed transfers', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'open-science-download-test-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const destination = join(directory, 'report.txt')
   const client = async args => {
     assert.deepEqual(args.slice(0, 4), ['artifacts', 'download', 'artifact-1', '--output'])
-    await writeFile(args[4], 'Example report')
+    await writeFile(args[4], 'Example report', { mode: 0o644 })
     return { artifactId: 'artifact-1', output: args[4] }
   }
   const request = validateRequest({ action: 'download', artifactId: 'artifact-1', destination })
@@ -69,6 +90,7 @@ test('publishes complete downloads and preserves existing destinations and faile
   const newDestination = join(directory, 'new.txt')
   await execute(client, { ...request, destination: newDestination })
   assert.equal(await readFile(newDestination, 'utf8'), 'Example report')
+  if (process.platform !== 'win32') assert.equal((await stat(newDestination)).mode & 0o777, 0o600)
   const brokenClient = async args => {
     await writeFile(args[4], 'partial')
     throw new Error('broken')

@@ -7,7 +7,7 @@ The first CLI release targets Open Science 1.3.0 on Windows. Codex, Claude Code,
 - Record the matching CLI launch command and arguments for each target instance. On Windows, the desktop installation supplies a Node executable and the CLI entry point. Verify the CLI version and check the selected service version with `status --json`. A working command on PATH can belong to a different Open Science release.
 - Pass the selected target's `configRoot` as `--config-root` on each service command. Report the selected instance ID in the runner's response. When its service is offline, ask the user to open that desktop instance normally and repeat the check.
 - Validate the replacement configuration, keep a backup, and replace the shared file atomically. Keep instance IDs, profile roots, the default selection, and the receipt directory. When an existing target lacks a matching CLI, ask for its launcher or an explicit target decision before changing the configuration. New configurations default to the official desktop instance.
-- Keep SDK configuration fields available only to the migration step. The upgraded adapters use the CLI configuration during operation. Rollback uses the saved configuration and previous adapter package.
+- Keep SDK configuration fields available only to the migration step. The upgraded adapters use the CLI configuration during operation. Coordinate the cutover across installed hosts or migrate a separate configuration copy for upgraded hosts while sharing the receipt directory. Rollback uses the saved configuration and previous adapter package. [Migration steps](../README.md#migrate-an-existing-configuration)
 
 ## Map the shared runner to CLI operations
 
@@ -33,7 +33,7 @@ On a bounded `run wait`, use `--return-on-attention` to surface Plan attention e
 
 Persist the request ID with its target and project before invoking the CLI, then record the Run ID when known. The CLI waits for admission on `run`. Use the CLI's admission deadline or a local subprocess deadline, then look up the request if the deadline expires. Existing receipts resolve to their original target after the migration or a change of default. Use `run status --request-id <id>` to recover a submission after the CLI exits or the host loses the response.
 
-Retry only when the user requests it, a lookup on the original instance returns the exact CLI error `submission_not_found`, the receipt has no known Run ID, and the full original request is available. Use the same ID and task parameters. An existing service receipt or an uncertain lookup leads to a status report. The runner stores lookup metadata and leaves prompts, credentials, and results with their existing owners.
+Retry only when the user requests it, a lookup on the original instance returns the exact CLI error `submission_not_found`, the receipt has no known Run ID, and the full original request is available. The runner verifies the task parameters against the fingerprint saved with the receipt. Legacy receipts without a fingerprint support lookup and recovery. An existing service receipt or an uncertain lookup leads to a status report. The runner stores lookup metadata and a request fingerprint. Prompts, credentials, and results stay with their existing owners.
 
 ## Rollout and acceptance
 

@@ -60,7 +60,7 @@ function runCli({ command, args = [] }, argv, { stdin, signal, timeoutMs = comma
   })
 }
 
-function parseCliResult({ stdout, stderr, exitCode }, { allowRunResult, allowOfflineStatus }) {
+function parseCliResult({ stdout, stderr, exitCode }, { allowRunResult, allowUnavailableStatus }) {
   const result = readJson(stdout)
   if (exitCode !== 0) {
     for (const line of stderr.split(/\r?\n/).reverse()) {
@@ -69,7 +69,8 @@ function parseCliResult({ stdout, stderr, exitCode }, { allowRunResult, allowOff
     }
     const error = cliError(result, exitCode)
     if (error) throw error
-    if (allowOfflineStatus && result?.running === false) return result
+    if (allowUnavailableStatus && (result?.running === false ||
+        (result?.running === null && result.status === 'unreachable'))) return result
     if (allowRunResult && typeof result?.id === 'string' &&
         ['completed', 'failed', 'cancelled', 'interrupted'].includes(result.status)) return result
     throw Object.assign(integrationError('cli_failed', 'Open Science CLI returned an unsuccessful exit without a structured result.'), { exitCode })
@@ -102,9 +103,12 @@ export async function connect({ configPath, instanceId, expectedBinding, signal,
     await runCli(config.cli, [...args, '--config-root', config.configRoot, '--json'], { signal, ...options }),
     options
   )
-  const status = await client(['status'], { timeoutMs: probeTimeoutMs, allowOfflineStatus: true })
+  const status = await client(['status'], { timeoutMs: probeTimeoutMs, allowUnavailableStatus: true })
   if (status?.running === false) {
     throw integrationError('daemon_unavailable', 'The selected Open Science instance is offline. Open that desktop instance normally, then try again.')
+  }
+  if (status?.running === null && status.status === 'unreachable') {
+    throw integrationError('daemon_unreachable', 'The selected Open Science process is running, but its local service did not respond. Check that desktop instance and try again when it is ready.')
   }
   if (status?.running !== true || typeof status.configRoot !== 'string' ||
       !isAbsolute(status.configRoot) || typeof status.appVersion !== 'string') {

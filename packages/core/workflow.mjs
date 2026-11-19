@@ -1,7 +1,7 @@
 import { execute, inputError } from './actions.mjs'
 import { connect, selectInstance } from './connection.mjs'
 import { claimInstanceOperation } from './locks.mjs'
-import { getReceipt, listReceipts, recordRunId, reserveReceipt } from './receipts.mjs'
+import { fingerprintRequest, getReceipt, listReceipts, recordRunId, reserveReceipt } from './receipts.mjs'
 
 const runActions = new Set(['run', 'wait', 'cancel'])
 
@@ -63,6 +63,7 @@ async function submit(client, request, { configuration, target, options, receipt
     }
   }
 
+  const fingerprint = fingerprintRequest(request)
   if (receipt) {
     // Another host may have recorded a Run while this request was checking the service.
     const latest = await getReceipt(stateDirectory, requestId)
@@ -70,12 +71,19 @@ async function submit(client, request, { configuration, target, options, receipt
     checkSubmitIdentity(latest, request)
     selectReceiptTarget(configuration, latest, target.instanceId)
     if (latest.runId !== undefined) return submission(client, requestId, options, stateDirectory)
+    if (latest.fingerprint === undefined) {
+      fail('retry_unverifiable', 'This receipt predates request fingerprints. Use submission to check its status. Start a new task with a new request ID only if you intend to replace it.')
+    }
+    if (latest.fingerprint !== fingerprint) {
+      fail('receipt_conflict', 'This request ID was reserved for different task parameters. Retry with the original prompt and options.')
+    }
   } else {
     const { created } = await reserveReceipt(stateDirectory, {
       requestId,
       instanceId: target.instanceId,
       binding: target.binding,
       projectId: run.project,
+      fingerprint,
       ...(run.sessionId === undefined ? {} : { sessionId: run.sessionId })
     })
     if (!created) return submission(client, requestId, options, stateDirectory)
@@ -143,7 +151,7 @@ export async function operate(configuration, request, { instanceId, signal } = {
     const receipts = await listReceipts(configuration.stateDirectory, {
       ...filters, instanceId: filterInstance ?? instanceId
     })
-    const result = receipts.map(({ binding: _, ...receipt }) => receipt)
+    const result = receipts.map(({ binding: _binding, fingerprint: _fingerprint, ...receipt }) => receipt)
     return { result }
   }
 

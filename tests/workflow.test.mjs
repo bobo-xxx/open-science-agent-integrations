@@ -156,6 +156,7 @@ test('recover in a new process on the original instance after a lost response an
   const listed = await call({ action: 'receipts' })
   assert.deepEqual(listed.result.map(x => [x.requestId, x.instanceId, x.projectId]), [[requestId, 'first', 'project-a']])
   assert.equal(Object.hasOwn(listed.result[0], 'binding'), false)
+  assert.equal(Object.hasOwn(listed.result[0], 'fingerprint'), false)
   assert.equal(Object.hasOwn(listed.result[0], 'prompt'), false)
   assert.equal((await call({ action: 'submission', requestId }, 'second')).error.code, 'receipt_instance_mismatch')
   const recovered = await call({ action: 'submission', requestId })
@@ -187,7 +188,7 @@ test('records the admitted Run ID even when the CLI exits with a failed Run', as
   assert.equal((await call({ action: 'receipts' })).result[0].runId, 'run-a')
 })
 
-test('recovers a legacy receipt through the CLI on its original profile', async t => {
+test('recovers a legacy receipt on its original profile and declines unverifiable resend', async t => {
   const { call, config, first, second, root, save } = await fixture(t, 'none')
   const requestId = 'legacy-request'
   const bindingKey = process.platform === 'win32' ? first.toLowerCase() : first
@@ -199,13 +200,20 @@ test('recovers a legacy receipt through the CLI on its original profile', async 
     requestId, instanceId: 'first', binding: hash(bindingKey), projectId: 'project-a', createdAt: 1700000000000
   })
   await writeFile(filename, legacy)
-  await writeFile(join(first, 'remote-receipt.json'), JSON.stringify({ requestId, status: 'accepted', runId: 'run-a' }))
   config.defaultInstance = 'second'
   await save()
+
+  const retry = {
+    action: 'submit', requestId, retryIfMissing: true, run: { project: 'project-a', prompt: '总结本次结果' }
+  }
+  assert.equal((await call({ action: 'submission', requestId })).error.code, 'submission_not_found')
+  assert.equal((await call(retry)).error?.code, 'retry_unverifiable')
+  await writeFile(join(first, 'remote-receipt.json'), JSON.stringify({ requestId, status: 'accepted', runId: 'run-a' }))
 
   const reply = await call({ action: 'submission', requestId })
   assert.equal(reply.instanceId, 'first')
   assert.equal(reply.result.runId, 'run-a')
+  assert.equal((await call(retry)).result.runId, 'run-a')
   assert.equal(await readFile(filename, 'utf8'), legacy)
   assert.equal((await call({ action: 'receipts' })).result[0].runId, 'run-a')
   await assert.rejects(readFile(join(second, 'connections.log')), { code: 'ENOENT' })
@@ -248,6 +256,45 @@ test('explicit retry resends an unadmitted request only on its original instance
   assert.equal((await call({ action: 'receipts' })).result[0].runId, 'run-a')
   assert.equal(await readFile(join(first, 'submissions.log'), 'utf8'), `${requestId}\n`)
   await assert.rejects(readFile(join(second, 'connections.log')), { code: 'ENOENT' })
+})
+
+test('explicit retry matches the full original payload without exposing its fingerprint', async t => {
+  const { call, first, root } = await fixture(t, 'none')
+  const requestId = 'request-a'
+  const run = {
+    project: 'project-a',
+    prompt: '总结本次结果',
+    skillIds: ['first-skill', 'second-skill'],
+    agentConfiguration: { providerId: 'provider-1', model: 'deepseek-flash' }
+  }
+  const request = { action: 'submit', requestId, run }
+  const retry = { ...request, retryIfMissing: true }
+  await writeFile(join(first, 'drop-before-send'), '')
+  assert.equal((await call(request)).error.code, 'timeout')
+
+  for (const changes of [
+    { prompt: 'Different prompt' },
+    { skillIds: ['second-skill', 'first-skill'] },
+    { agentConfiguration: { ...run.agentConfiguration, model: 'different-model' } }
+  ]) {
+    assert.equal((await call({ ...retry, run: { ...run, ...changes } })).error?.code, 'receipt_conflict')
+  }
+  await assert.rejects(readFile(join(first, 'submissions.log')), { code: 'ENOENT' })
+
+  const key = createHash('sha256').update(requestId).digest('hex')
+  const reservation = await readFile(join(root, 'receipts', `${key}.request.json`), 'utf8')
+  assert.match(JSON.parse(reservation).fingerprint, /^[a-f0-9]{64}$/)
+  assert.doesNotMatch(reservation, /总结本次结果|first-skill|provider-1|deepseek-flash/)
+  assert.equal(Object.hasOwn((await call({ action: 'receipts' })).result[0], 'fingerprint'), false)
+
+  const reordered = {
+    agentConfiguration: { model: 'deepseek-flash', providerId: 'provider-1' },
+    skillIds: run.skillIds,
+    prompt: run.prompt,
+    project: run.project
+  }
+  assert.equal((await call({ ...retry, run: reordered })).result.runId, 'run-a')
+  assert.equal(await readFile(join(first, 'submissions.log'), 'utf8'), `${requestId}\n`)
 })
 
 test('explicit retry requires a local receipt and a boolean flag', async t => {

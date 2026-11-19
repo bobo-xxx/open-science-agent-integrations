@@ -50,6 +50,10 @@ npm run configure -- --migrate <prepared-cli-config.json>
 
 Migration verifies each CLI and running profile, saves a backup, and atomically replaces the shared configuration. If an instance has no matching CLI or service, report the instance and resolve it before migrating. Keep the backup path with the previous adapter packages for rollback. [Migration and acceptance plan](docs/cli-migration.md)
 
+For the 0.2.0 to 0.3.0 update, build the packages first, then migrate the shared file and update all installed adapters in the same maintenance window. Version 0.2.0 requires the SDK configuration and 0.3.0 requires the CLI configuration.
+
+To update one host at a time, copy the existing configuration to a new file beside it and pass the copy as the destination in `npm run configure -- --migrate <prepared-cli-config.json> <copied-config.json>`. Both files use the same receipt directory, including when the path is implicit. In upgraded hosts, pass `--config <absolute-path-to-copied-config>` on runner calls and include that path in the new-chat probe. Other hosts continue to use the original file until they are upgraded.
+
 ## Host install steps
 
 ### Install in Codex
@@ -113,12 +117,13 @@ Report the built commit SHA, the returned `instanceId`, and the CLI and service 
 If verification fails, keep the selected instance and report the CLI error code.
 
 - For a missing `web-service.json` or an offline service, have the user open the selected desktop instance and check its profile again. [Shared setup](#shared-setup)
+- For `daemon_unreachable`, check the selected desktop instance and try again when its service is ready.
 - For `incompatible_cli` or `cli_version_mismatch`, locate the CLI in the matching desktop installation and check its version.
 - If authentication is rejected, confirm that `configRoot` belongs to the intended running instance and that the agent and app run under the same Windows account.
 
 ## Update or remove an adapter
 
-To update, build the requested GitHub revision. Migrate an older shared configuration before replacing any host package. Keep the previous packages and configuration backup together so you can restore both if an upgrade fails. [Shared setup](#shared-setup)
+To update, build the requested GitHub revision. For an SDK-based installation, choose a migration path before replacing a host package. Keep the previous packages and configuration backup together so you can restore both if an upgrade fails. [Migration steps](#migrate-an-existing-configuration)
 
 | Host | Update | Remove |
 | --- | --- | --- |

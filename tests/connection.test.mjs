@@ -44,6 +44,9 @@ async function fixture(t, settings = {}) {
         if (configRoot.includes('offline profile')) {
           console.log(JSON.stringify({ running: false }))
           process.exitCode = 3
+        } else if (settings.unreachable) {
+          console.log(JSON.stringify({ running: null, status: 'unreachable', configRoot }))
+          process.exitCode = 1
         } else {
           console.log(JSON.stringify({
             running: true,
@@ -93,6 +96,14 @@ test('an offline target uses only its scoped status command and asks for desktop
   assert.deepEqual(await calls(), [
     { args: ['--version'], stdin: '' },
     { args: ['status', '--config-root', otherRoot, '--json'], stdin: '' }
+  ])
+})
+
+test('distinguishes a live but unresponsive service from an offline instance', async t => {
+  const { configPath, configRoot, calls } = await fixture(t, { unreachable: true })
+  await assert.rejects(connect({ configPath }), { code: 'daemon_unreachable' })
+  assert.deepEqual((await calls()).map(call => call.args), [
+    ['--version'], ['status', '--config-root', configRoot, '--json']
   ])
 })
 

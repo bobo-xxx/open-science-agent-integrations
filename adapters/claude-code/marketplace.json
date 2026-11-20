@@ -1,11 +1,11 @@
 {
   "name": "open-science-integrations-local",
-  "owner": { "name": "Open Science Integrations contributors" },
-  "metadata": { "description": "Local integrations for the Open Science research workbench." },
+  "owner": { "name": "Open-Science Integrations contributors" },
+  "metadata": { "description": "Local integrations for the Open-Science research workbench." },
   "plugins": [
     {
       "name": "open-science",
-      "description": "Submit and track Open Science research tasks through the official CLI.",
+      "description": "Submit and track Open-Science research tasks through the official CLI.",
       "source": "./plugins/open-science"
     }
   ]

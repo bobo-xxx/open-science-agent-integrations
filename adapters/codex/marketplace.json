@@ -1,6 +1,6 @@
 {
   "name": "open-science-integrations-local",
-  "interface": { "displayName": "Open Science Integrations" },
+  "interface": { "displayName": "Open-Science Integrations" },
   "plugins": [
     {
       "name": "open-science",

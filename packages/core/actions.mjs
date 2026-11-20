@@ -93,12 +93,12 @@ function validateRun(run) {
     throw inputError('Plan First requires an interactive run.')
   }
   if (run.sessionId !== undefined && run.enabledComputeHostIds !== undefined) {
-    throw unsupportedOperation('The CLI requires a separate configuration update to change the available Compute Hosts of an existing Session. Use the Session settings in Open Science.')
+    throw unsupportedOperation('The CLI requires a separate configuration update to change the available Compute Hosts of an existing Session. Use the Session settings in Open-Science.')
   }
   const hasEmptyEnabled = run.enabledComputeHostIds?.length === 0
   const hasEmptySelected = run.computeHostIds?.length === 0
   if (hasEmptyEnabled !== hasEmptySelected) {
-    throw unsupportedOperation('The CLI can clear both Compute Host lists for a new Session. Use the Compute Host settings in Open Science to clear just one list.')
+    throw unsupportedOperation('The CLI can clear both Compute Host lists for a new Session. Use the Compute Host settings in Open-Science to clear just one list.')
   }
   if (run.agentConfiguration === undefined) return
   const settings = object(run.agentConfiguration, 'run.agentConfiguration')
@@ -185,7 +185,7 @@ export function validateRequest(request) {
   if (!Object.hasOwn(actions, action)) throw inputError(`Unknown action: ${action}.`)
   keys(request, ['action', ...actions[action]], 'request')
   if (action === 'sessions') {
-    throw unsupportedOperation('Use a task receipt or supply a Session ID from Open Science. The CLI supports Session lookup by ID.')
+    throw unsupportedOperation('Use a task receipt or supply a Session ID from Open-Science. The CLI supports Session lookup by ID.')
   }
   for (const field of actions[action].filter((field) => field.endsWith('Id'))) {
     if (request[field] === undefined && (action === 'receipts' || field === 'branchId')) continue

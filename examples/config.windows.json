@@ -2,7 +2,7 @@
   "defaultInstance": "installed",
   "instances": {
     "installed": {
-      "name": "Open Science",
+      "name": "Open-Science",
       "configRoot": "C:/path/to/open-science-profile",
       "cli": {
         "command": "C:/path/to/open-science/resources/node-runtime/node.exe",

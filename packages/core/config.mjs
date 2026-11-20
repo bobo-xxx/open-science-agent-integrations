@@ -90,9 +90,9 @@ export function parseConfiguration(source, path, readInstance = normalizeInstanc
   try {
     parsed = JSON.parse(source.replace(/^\uFEFF/, ''))
   } catch {
-    throw configError('Open Science integration config must be valid JSON.')
+    throw configError('Open-Science integration config must be valid JSON.')
   }
-  if (!isObject(parsed)) throw configError('Open Science integration config must be a JSON object.')
+  if (!isObject(parsed)) throw configError('Open-Science integration config must be a JSON object.')
 
   const stateDirectory = parsed.stateDirectory === undefined
     ? join(dirname(path), 'receipts')
@@ -124,9 +124,9 @@ export async function readConfigurationSource(path) {
     return await readFile(path, 'utf8')
   } catch (error) {
     if (error.code === 'ENOENT') {
-      throw integrationError('config_not_found', `Open Science integration config is missing: ${path}`)
+      throw integrationError('config_not_found', `Open-Science integration config is missing: ${path}`)
     }
-    throw configError(`Could not read the Open Science integration config: ${path}`)
+    throw configError(`Could not read the Open-Science integration config: ${path}`)
   }
 }
 
@@ -170,7 +170,7 @@ function canonicalProfileRoot(configRoot) {
 
 export function selectInstance(configuration, id = configuration.defaultInstance) {
   if (!isInstanceId(id) || !Object.hasOwn(configuration.instances, id)) {
-    throw integrationError('instance_not_found', 'The requested Open Science instance is not configured. List the configured instances and select its ID.')
+    throw integrationError('instance_not_found', 'The requested Open-Science instance is not configured. List the configured instances and select its ID.')
   }
   const configured = configuration.instances[id]
   const configRoot = canonicalProfileRoot(configured.configRoot)

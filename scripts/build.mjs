@@ -51,12 +51,12 @@ async function copyFiles(source, destination, files) {
 async function compileSkill(root, destination) {
   const source = join(root, 'skills', skillName)
   const skillFiles = await filesUnder(source)
-  if (!skillFiles.includes('SKILL.md')) throw new Error('Missing shared Open Science SKILL.md')
+  if (!skillFiles.includes('SKILL.md')) throw new Error('Missing shared Open-Science SKILL.md')
   await copyFiles(source, destination, skillFiles)
 
   const core = join(root, 'packages', 'core')
   const runtimeFiles = (await filesUnder(core)).filter((path) => path.endsWith('.mjs'))
-  if (!runtimeFiles.includes('runner.mjs')) throw new Error('Missing shared Open Science CLI runner.mjs')
+  if (!runtimeFiles.includes('runner.mjs')) throw new Error('Missing shared Open-Science CLI runner.mjs')
   await copyFiles(core, join(destination, 'scripts'), runtimeFiles)
 }
 

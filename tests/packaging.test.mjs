@@ -96,7 +96,7 @@ test('rebuild removes obsolete modules and preserves the previous build after a 
   await assert.rejects(access(join(scripts, 'obsolete.mjs')), { code: 'ENOENT' })
 
   await rm(join(core, 'runner.mjs'))
-  await assert.rejects(buildPackages(root), /Missing shared Open Science CLI runner/)
+  await assert.rejects(buildPackages(root), /Missing shared Open-Science CLI runner/)
   await access(join(scripts, 'runner.mjs'))
   assert.ok((await readdir(root)).every((entry) => !entry.startsWith('.open-science-build-')))
 })

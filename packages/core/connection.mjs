@@ -38,7 +38,7 @@ function findCliError(result, stderr, exitCode) {
 
 function unexpectedCliExit(exitCode) {
   return Object.assign(
-    integrationError('cli_failed', 'Open Science CLI returned an unsuccessful exit without a structured result.'),
+    integrationError('cli_failed', 'Open-Science CLI returned an unsuccessful exit without a structured result.'),
     { exitCode }
   )
 }
@@ -56,16 +56,16 @@ function runCli({ command, args = [] }, argv, { stdin, signal, timeoutMs = comma
     }, (error, stdout, stderr) => {
       if (signal?.aborted) return reject(signal.reason)
       if (error?.code === 'ENOENT' || error?.code === 'EACCES') {
-        return reject(integrationError('cli_launch_failed', 'Could not run the configured Open Science CLI. Verify its installed executable.'))
+        return reject(integrationError('cli_launch_failed', 'Could not run the configured Open-Science CLI. Verify its installed executable.'))
       }
       if (error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
-        return reject(integrationError('cli_output_too_large', 'Open Science CLI output exceeded the runner limit.'))
+        return reject(integrationError('cli_output_too_large', 'Open-Science CLI output exceeded the runner limit.'))
       }
       if (error?.killed) {
-        return reject(integrationError('cli_timeout', 'The Open Science CLI exceeded the local command deadline. Verify the task status before retrying.'))
+        return reject(integrationError('cli_timeout', 'The Open-Science CLI exceeded the local command deadline. Verify the task status before retrying.'))
       }
       if (error && !Number.isInteger(error.code)) {
-        return reject(integrationError('cli_failed', 'Could not complete the Open Science CLI command.'))
+        return reject(integrationError('cli_failed', 'Could not complete the Open-Science CLI command.'))
       }
       resolve({ stdout, stderr, exitCode: error?.code ?? 0 })
     })
@@ -89,7 +89,7 @@ function parseCliResult({ stdout, stderr, exitCode }, { allowRunResult, allowUna
   const error = cliError(result)
   if (error) throw error
   if (result === undefined) {
-    throw integrationError('invalid_cli_response', 'Open Science CLI did not return valid JSON.')
+    throw integrationError('invalid_cli_response', 'Open-Science CLI did not return valid JSON.')
   }
   return result
 }
@@ -103,12 +103,12 @@ async function requireResearchFilm(cli, signal) {
     ? error.code === 'invalid_cli_usage' && error.message.trim() === unknownFilm
     : exitCode === 2 && [stdout.trim(), stderr.trim()].includes(unknownFilm)
   if (unsupported) {
-    throw integrationError('unsupported_operation', 'The selected Open Science CLI does not support Research Film. Configure a matching Open Science build that provides the film command.')
+    throw integrationError('unsupported_operation', 'The selected Open-Science CLI does not support Research Film. Configure a matching Open-Science build that provides the film command.')
   }
   if (error) throw error
   if (exitCode !== 0) throw unexpectedCliExit(exitCode)
   if (!/^Usage:\s+open-science\s+film\b/m.test(stdout)) {
-    throw integrationError('invalid_cli_response', 'Open Science CLI did not return Research Film help.')
+    throw integrationError('invalid_cli_response', 'Open-Science CLI did not return Research Film help.')
   }
 }
 
@@ -125,7 +125,7 @@ export async function connect({ configPath, instanceId, expectedBinding, signal,
   const version = versionReply.stdout.trim()
   const match = /^(\d+)\.(\d+)\.\d+$/.exec(version)
   if (versionReply.exitCode !== 0 || !match || +match[1] < 1 || (+match[1] === 1 && +match[2] < 3)) {
-    throw integrationError('incompatible_cli', 'Select the official Open Science CLI from version 1.3.0 or later.')
+    throw integrationError('incompatible_cli', 'Select the official Open-Science CLI from version 1.3.0 or later.')
   }
 
   const client = async (args, options = {}) => parseCliResult(
@@ -134,23 +134,23 @@ export async function connect({ configPath, instanceId, expectedBinding, signal,
   )
   const status = await client(['status'], { timeoutMs: probeTimeoutMs, allowUnavailableStatus: true })
   if (status?.running === false) {
-    throw integrationError('daemon_unavailable', 'The selected Open Science instance is offline. Open that desktop instance normally, then try again.')
+    throw integrationError('daemon_unavailable', 'The selected Open-Science instance is offline. Open that desktop instance normally, then try again.')
   }
   if (status?.running === null && status.status === 'unreachable') {
-    throw integrationError('daemon_unreachable', 'The selected Open Science process is running, but its local service did not respond. Check that desktop instance and try again when it is ready.')
+    throw integrationError('daemon_unreachable', 'The selected Open-Science process is running, but its local service did not respond. Check that desktop instance and try again when it is ready.')
   }
   if (status?.running !== true || typeof status.configRoot !== 'string' ||
       !isAbsolute(status.configRoot) || typeof status.appVersion !== 'string') {
-    throw integrationError('invalid_cli_response', 'Open Science CLI status did not identify the running instance.')
+    throw integrationError('invalid_cli_response', 'Open-Science CLI status did not identify the running instance.')
   }
   const reported = selectInstance({
     instances: { [instance.instanceId]: { ...config, configRoot: status.configRoot } }
   }, instance.instanceId)
   if (reported.binding !== binding) {
-    throw integrationError('cli_target_mismatch', 'Open Science CLI status reported a different instance profile.')
+    throw integrationError('cli_target_mismatch', 'Open-Science CLI status reported a different instance profile.')
   }
   if (status.appVersion !== version) {
-    throw integrationError('cli_version_mismatch', 'The Open Science CLI version differs from the selected running service. Use the CLI from that desktop installation.')
+    throw integrationError('cli_version_mismatch', 'The Open-Science CLI version differs from the selected running service. Use the CLI from that desktop installation.')
   }
   client.version = version
   client.status = status

@@ -1,22 +1,22 @@
-# Open Science Agent Integrations
+# Open-Science Agent Integrations
 
-Use Codex, Claude Code, or WorkBuddy to submit research tasks to Open Science, recover runs after a chat closes, and retrieve results and artifacts through the official Open Science CLI.
+Use Codex, Claude Code, or WorkBuddy to submit research tasks to Open-Science, recover runs after a chat closes, and retrieve results and artifacts through the official Open-Science CLI.
 
 ## Ask your agent to install
 
-Send the prompt for your host in a session with terminal and file access on the computer running Open Science. This guide uses the official Open Science 1.3.0 Windows desktop release as its baseline. [Open Science 1.3.0](https://github.com/aipoch/open-science/releases/tag/v1.3.0)
+Send the prompt for your host in a session with terminal and file access on the computer running Open-Science. This guide uses the official Open-Science 1.3.0 Windows desktop release as its baseline. [Open-Science 1.3.0](https://github.com/aipoch/open-science/releases/tag/v1.3.0)
 
 ### Codex
 
-> Install the Open Science plugin from https://github.com/bobo-xxx/open-science-agent-integrations. Follow this README's shared setup and Codex install steps. Reuse my Open Science configuration if it already points to the requested instance. Verify the connection and tell me how to find the skill in a new Codex chat.
+> Install the Open-Science plugin from https://github.com/bobo-xxx/open-science-agent-integrations. Follow this README's shared setup and Codex install steps. Reuse my Open-Science configuration if it already points to the requested instance. Verify the connection and tell me how to find the skill in a new Codex chat.
 
 ### Claude Code
 
-> Install the Open Science plugin for my Claude Code user account from https://github.com/bobo-xxx/open-science-agent-integrations. Follow this README's shared setup and Claude Code install steps. Reuse my Open Science configuration if it already points to the requested instance. Verify the connection and tell me how to invoke the skill in a new Claude Code session.
+> Install the Open-Science plugin for my Claude Code user account from https://github.com/bobo-xxx/open-science-agent-integrations. Follow this README's shared setup and Claude Code install steps. Reuse my Open-Science configuration if it already points to the requested instance. Verify the connection and tell me how to invoke the skill in a new Claude Code session.
 
 ### WorkBuddy
 
-> Install the Open Science skill from [https://github.com/bobo-xxx/open-science-agent-integrations](https://github.com/bobo-xxx/open-science-agent-integrations) for WorkBuddy.
+> Install the Open-Science skill from [https://github.com/bobo-xxx/open-science-agent-integrations](https://github.com/bobo-xxx/open-science-agent-integrations) for WorkBuddy.
 
 ## Shared setup
 
@@ -32,7 +32,7 @@ Resolve repository paths from the checkout and expand `~` to the current user's 
    git rev-parse HEAD
    ```
 
-3. Select the Open Science instance the user requested. Use the official desktop instance for a standard installation. If several instances match, ask which one to use. If the selected instance is offline, ask the user to open it through its normal desktop entry point so it uses its existing profile and credentials.
+3. Select the Open-Science instance the user requested. Use the official desktop instance for a standard installation. If several instances match, ask which one to use. If the selected instance is offline, ask the user to open it through its normal desktop entry point so it uses its existing profile and credentials.
 
    - On Windows, set `cli.command` to the desktop installation's `resources/node-runtime/node.exe`. Put that installation's absolute `resources/backend/cli.mjs` path in `cli.args`. Resolve these paths from the matching installation and check the CLI's `--version`.
    - Use the directory containing the selected service's `web-service.json` as `configRoot`. The standard Windows installation normally uses `~/.open-science`. Each configured profile needs its own matching CLI, even when several versions are installed.
@@ -65,9 +65,9 @@ codex plugin marketplace add (Resolve-Path 'dist/codex').Path
 codex plugin add open-science@open-science-integrations-local
 ```
 
-Verify the Open Science connection, then give the user this prompt for a new Codex chat to verify that Codex discovers the skill. [Connection checks](#verify-the-open-science-connection)
+Verify the Open-Science connection, then give the user this prompt for a new Codex chat to verify that Codex discovers the skill. [Connection checks](#verify-the-open-science-connection)
 
-> Use the `open-science:open-science` skill to list projects for Open Science instance `installed`. Pass `--instance installed` to the runner and report the returned `instanceId`.
+> Use the `open-science:open-science` skill to list projects for Open-Science instance `installed`. Pass `--instance installed` to the runner and report the returned `instanceId`.
 
 ### Install in Claude Code
 
@@ -78,9 +78,9 @@ claude plugin marketplace add (Resolve-Path 'dist/claude-code').Path
 claude plugin install open-science@open-science-integrations-local
 ```
 
-Verify the Open Science connection, then give the user this prompt for a new Claude Code session to verify that Claude Code discovers the skill. [Connection checks](#verify-the-open-science-connection)
+Verify the Open-Science connection, then give the user this prompt for a new Claude Code session to verify that Claude Code discovers the skill. [Connection checks](#verify-the-open-science-connection)
 
-> /open-science:open-science List projects for Open Science instance `installed`. Pass `--instance installed` to the runner and report the returned `instanceId`.
+> /open-science:open-science List projects for Open-Science instance `installed`. Pass `--instance installed` to the runner and report the returned `instanceId`.
 
 To load the plugin for a single session, run this from the repository root in PowerShell.
 
@@ -93,16 +93,16 @@ claude --plugin-dir (Resolve-Path 'dist/claude-code/plugins/open-science').Path
 Use your terminal and file tools in local mode to complete shared setup and install the skill.
 
 1. Deploy the contents of `dist/workbuddy/open-science` to `~/.workbuddy/skills/open-science`. Place `SKILL.md`, `scripts`, and `references` directly under the destination. If those files already match the build, reuse the existing copy. [WorkBuddy skill directory](https://skillhub.cn/install/skillhub.md)
-2. Check the deployed files. Verify the Open Science connection with the installed `scripts/runner.mjs` and report the install location. [Connection checks](#verify-the-open-science-connection)
+2. Check the deployed files. Verify the Open-Science connection with the installed `scripts/runner.mjs` and report the install location. [Connection checks](#verify-the-open-science-connection)
 3. To verify skill discovery, give the user this prompt to send in a new local WorkBuddy chat.
 
-   > Use the `open-science` skill to list projects for Open Science instance `installed`. Pass `--instance installed` to the runner and report the returned `instanceId`.
+   > Use the `open-science` skill to list projects for Open-Science instance `installed`. Pass `--instance installed` to the runner and report the returned `instanceId`.
 
 If the new chat cannot find the skill, ask the user to restart WorkBuddy and retry. If directory installation is blocked or the skill still cannot be found after a restart, report the blocker, give the user the absolute path to the built `dist/workbuddy/open-science.zip`, and point them to **Skills → Add Skill → Upload Skill**. For workspace-scoped installation, deploy the skill under the active coding workspace's `.codebuddy/skills/` directory. [WorkBuddy skill import](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) · [Workspace skills](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Project)
 
 On Windows, WorkBuddy installed the skill into the user-level directory after a one-line request with the GitHub repository URL.
 
-## Verify the Open Science connection
+## Verify the Open-Science connection
 
 Run these read-only PowerShell probes from the repository root. Confirm the configured ID with `instances`, then pass it explicitly to `health` and `doctor`. For WorkBuddy, substitute the path to the deployed `scripts/runner.mjs`.
 
@@ -136,13 +136,13 @@ Keep the shared configuration and receipts when removing one adapter.
 ## Instance selection and task recovery
 
 - Use `OPEN_SCIENCE_INTEGRATIONS_CONFIG` or `--config <path>` for a different shared configuration. Older single-instance configurations use the ID `default`.
-- The runner saves request IDs and known Run IDs in `receipts` next to the configuration on a filesystem with hard-link support, such as NTFS. Set an absolute `stateDirectory` to store them elsewhere. Keep each instance ID bound to its original profile so receipts can recover runs after the default changes. Open Science continues an accepted task after the runner exits.
-- Continue existing sessions by Session ID or task receipt. If you have only a title, locate the session in Open Science.
-- To switch the internal Open Science agent, ask the host to read `agent-routing` and apply `switch-agent` to the selected instance. The new setting governs later tasks there. Check `doctor` before starting a test task.
-- When a pending approval or question needs human action, use the session ID from the runner to find it in Open Science.
+- The runner saves request IDs and known Run IDs in `receipts` next to the configuration on a filesystem with hard-link support, such as NTFS. Set an absolute `stateDirectory` to store them elsewhere. Keep each instance ID bound to its original profile so receipts can recover runs after the default changes. Open-Science continues an accepted task after the runner exits.
+- Continue existing sessions by Session ID or task receipt. If you have only a title, locate the session in Open-Science.
+- To switch the internal Open-Science agent, ask the host to read `agent-routing` and apply `switch-agent` to the selected instance. The new setting governs later tasks there. Check `doctor` before starting a test task.
+- When a pending approval or question needs human action, use the session ID from the runner to find it in Open-Science.
 
 See the runner reference for request examples and recovery. Run `npm test` for regression checks. [Runner reference](skills/open-science/references/runner.md) · [CLI migration](docs/cli-migration.md) · [Official CLI guide](https://github.com/aipoch/open-science/blob/v1.3.0/packages/open-science/CLI.md)
 
 ## Research Films
 
-Ask any supported host to create, revise, or export a Research Film from a completed Open Science conversation. The skill can generate a Research explanation or Operation replay and save the published film as a self-contained HTML player with narration. Film actions require an Open Science build that provides the `film` commands and a matching service with Research Film support. [Research Film workflow](skills/open-science/references/runner.md#research-films)
+Ask any supported host to create, revise, or export a Research Film from a completed Open-Science conversation. The skill can generate a Research explanation or Operation replay and save the published film as a self-contained HTML player with narration. Film actions require an Open-Science build that provides the `film` commands and a matching service with Research Film support. [Research Film workflow](skills/open-science/references/runner.md#research-films)

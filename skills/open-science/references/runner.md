@@ -32,21 +32,21 @@ Initial `submit` waits for CLI admission and returns an `accepted` receipt with 
 
 The runner saves the local receipt before invoking the CLI, so it can exist before the service has a receipt. On a timeout or unconfirmed admission, use the same request ID to recover the service receipt. `submission` is a read-only service query. Repeating `submit` with the same ID uses the same query by default. The runner resolves an indexed request or Run from its original target even after the default changes. Restore the binding if the original target has changed. For a known request or Run ID without a local receipt, provide the target explicitly with `--instance`.
 
-For calls that use a Session or artifact ID, pass the instance ID from the preceding Run reply. Continue a session using its ID or the Session ID from an existing Run. A title-only request requires the user to identify the Session in Open Science.
+For calls that use a Session or artifact ID, pass the instance ID from the preceding Run reply. Continue a session using its ID or the Session ID from an existing Run. A title-only request requires the user to identify the Session in Open-Science.
 
 ```json
 {"action":"submit","requestId":"<new-uuid>","run":{"project":"<project-id>","prompt":"Summarize the project's recent results in two sentences."}}
 ```
 
-The `run` object in `submit` accepts `sessionId`, absolute `cwd`, `permissionProfile`, `permissionPrompts`, `turnIntent`, `skillIds`, `specialist`, `autoReviewEnabled`, `memoryEnabled`, `delegationPolicy`, `agentConfiguration`, `computeHostIds`, and `enabledComputeHostIds`. Omit overrides to keep the current settings. An explicit `agentConfiguration.providerId` requires a model or a null model to use that provider's default. Interactive Plan First requires leaving `permissionPrompts` unset. Use the existing Session settings to change available Compute Hosts before resuming. For a new Session, pass both Compute Host arrays empty to clear both lists. To clear just one list, use the Session's Compute Host settings in Open Science. [Official 1.3.0 CLI guide](https://github.com/aipoch/open-science/blob/v1.3.0/packages/open-science/CLI.md)
+The `run` object in `submit` accepts `sessionId`, absolute `cwd`, `permissionProfile`, `permissionPrompts`, `turnIntent`, `skillIds`, `specialist`, `autoReviewEnabled`, `memoryEnabled`, `delegationPolicy`, `agentConfiguration`, `computeHostIds`, and `enabledComputeHostIds`. Omit overrides to keep the current settings. An explicit `agentConfiguration.providerId` requires a model or a null model to use that provider's default. Interactive Plan First requires leaving `permissionPrompts` unset. Use the existing Session settings to change available Compute Hosts before resuming. For a new Session, pass both Compute Host arrays empty to clear both lists. To clear just one list, use the Session's Compute Host settings in Open-Science. [Official 1.3.0 CLI guide](https://github.com/aipoch/open-science/blob/v1.3.0/packages/open-science/CLI.md)
 
 `respond-plan` accepts `{"decision":"approved","artifactVersionId":"<version-from-plan>","expectedRevision":7}`, the same shape with `"rejected"`, or `{"feedback":"<user feedback>"}`. Read the latest plan before submitting a decision and use its exact version and revision. If a decision becomes stale, read again and surface the updated plan.
 
-`switch-agent` writes the selected Open Science instance's saved framework. Read `agent-routing` first and use `configured.framework` as `expectedFramework`. Supported IDs are `open-science-agent`, `claude-code`, `opencode`, `codex`, `codebuddy`, and `pi`. Use `doctor` before execution to verify runtime and model readiness. If the CLI rejects a routing change, report its error.
+`switch-agent` writes the selected Open-Science instance's saved framework. Read `agent-routing` first and use `configured.framework` as `expectedFramework`. Supported IDs are `open-science-agent`, `claude-code`, `opencode`, `codex`, `codebuddy`, and `pi`. Use `doctor` before execution to verify runtime and model readiness. If the CLI rejects a routing change, report its error.
 
 Switches from the three adapters share an instance lock. The runner reads the setting after an update to check the outcome. On `routing_busy` or `routing_changed`, read the current setting before retrying.
 
-The Open Science CLI downloads by the listed version's `id`. Some entries also have an `artifactId` that groups versions. Choose an unused destination in an existing local directory. The runner publishes the complete file at the destination and refuses to replace existing files. The destination filesystem must support hard links.
+The Open-Science CLI downloads by the listed version's `id`. Some entries also have an `artifactId` that groups versions. Choose an unused destination in an existing local directory. The runner publishes the complete file at the destination and refuses to replace existing files. The destination filesystem must support hard links.
 
 ## Research Films
 
